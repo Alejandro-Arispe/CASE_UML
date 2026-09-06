@@ -1,0 +1,12 @@
+// Esquema de persistencia (adaptador). Los modelos aqui son detalle de
+// infraestructura: el dominio (src/domain) no depende de Prisma.
+// Las entidades (User, Project, UMLModel, etc.) se agregan en la Fase 2.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}

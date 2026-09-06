@@ -1,0 +1,15 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: case_uml_postgres
+    environment:
+      POSTGRES_DB: case_uml
+      POSTGRES_USER: case_uml
+      POSTGRES_PASSWORD: case_uml
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
