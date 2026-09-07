@@ -1,6 +1,6 @@
 // Esquema de persistencia (adaptador). Los modelos aqui son detalle de
-// infraestructura: el dominio (src/domain) no depende de Prisma.
-// Las entidades (User, Project, UMLModel, etc.) se agregan en la Fase 2.
+// infraestructura: el dominio (src/domain) no depende de Prisma. Los
+// repositorios en src/adapters/persistence mapean entre ambos mundos.
 
 generator client {
   provider = "prisma-client-js"
@@ -9,4 +9,170 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+
+  ownedProjects Project[]       @relation("ProjectOwner")
+  memberships   ProjectMember[]
+  editHistory   EditHistory[]
+}
+
+model Project {
+  id         String   @id @default(uuid())
+  name       String
+  inviteCode String   @unique
+  ownerId    String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  owner       User            @relation("ProjectOwner", fields: [ownerId], references: [id])
+  members     ProjectMember[]
+  umlModel    UmlModel?
+  editHistory EditHistory[]
+}
+
+enum ProjectRole {
+  OWNER
+  MEMBER
+}
+
+// El owner tambien tiene su propia fila aqui (rol OWNER): asi "mis
+// proyectos" es una unica consulta por membresia, sin unir con Project.ownerId.
+model ProjectMember {
+  id        String      @id @default(uuid())
+  projectId String
+  userId    String
+  role      ProjectRole
+  joinedAt  DateTime    @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+}
+
+// Un proyecto tiene a lo sumo un UmlModel: es el modelo interno completo
+// (seccion 10), fuente de verdad del diagrama. `revision` es la autoridad
+// de orden de operaciones (seccion 23).
+model UmlModel {
+  id        String @id @default(uuid())
+  projectId String @unique
+  revision  Int    @default(0)
+
+  project       Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  classes       UmlClass[]
+  relationships UmlRelationship[]
+}
+
+model UmlClass {
+  id        String @id @default(uuid())
+  modelId   String
+  name      String
+  positionX Float  @default(0)
+  positionY Float  @default(0)
+
+  model      UmlModel       @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  attributes UmlAttribute[]
+
+  relationshipsAsSource UmlRelationship[] @relation("RelationshipSource")
+  relationshipsAsTarget UmlRelationship[] @relation("RelationshipTarget")
+}
+
+// Tipos soportados (seccion 15). Ampliar solo cuando la generacion lo
+// requiera; cada uno debe tener mapeo a Java y PostgreSQL en el generador.
+enum UmlDataType {
+  String
+  Integer
+  Long
+  Double
+  Boolean
+  BigDecimal
+  LocalDate
+  LocalDateTime
+  UUID
+}
+
+model UmlAttribute {
+  id           String      @id @default(uuid())
+  classId      String
+  name         String
+  type         UmlDataType
+  isPrimaryKey Boolean     @default(false)
+  nullable     Boolean     @default(true)
+  defaultValue String?
+
+  class UmlClass @relation(fields: [classId], references: [id], onDelete: Cascade)
+}
+
+// Alcance de relaciones prioritarias (seccion 12): asociaciones con
+// multiplicidad. Aggregation/Composition/Dependency quedan fuera (seccion 13).
+enum RelationshipType {
+  ONE_TO_ONE
+  ONE_TO_MANY
+  MANY_TO_ONE
+  MANY_TO_MANY
+}
+
+// Prisma no admite nombres de enum que empiecen con digito ("1"): ONE/MANY
+// se mapean a los valores de dominio '1'/'N' en el repositorio.
+enum Multiplicity {
+  ONE
+  MANY
+}
+
+model UmlRelationship {
+  id                 String           @id @default(uuid())
+  modelId            String
+  sourceClassId      String
+  targetClassId      String
+  type               RelationshipType
+  sourceMultiplicity Multiplicity
+  targetMultiplicity Multiplicity
+
+  model       UmlModel @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  sourceClass UmlClass @relation("RelationshipSource", fields: [sourceClassId], references: [id], onDelete: Cascade)
+  targetClass UmlClass @relation("RelationshipTarget", fields: [targetClassId], references: [id], onDelete: Cascade)
+}
+
+enum EditOperation {
+  CREATE_CLASS
+  DELETE_CLASS
+  RENAME_CLASS
+  ADD_ATTRIBUTE
+  REMOVE_ATTRIBUTE
+  UPDATE_ATTRIBUTE
+  CREATE_RELATIONSHIP
+  UPDATE_RELATIONSHIP
+  DELETE_RELATIONSHIP
+  SET_MULTIPLICITY
+  MOVE_ELEMENT
+}
+
+enum EditElementType {
+  CLASS
+  ATTRIBUTE
+  RELATIONSHIP
+}
+
+model EditHistory {
+  id          String          @id @default(uuid())
+  projectId   String
+  userId      String
+  operation   EditOperation
+  elementType EditElementType
+  elementId   String
+  description String
+  timestamp   DateTime        @default(now())
+  revision    Int
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, timestamp])
 }

@@ -9,7 +9,7 @@ src/
 ├── ports/           Interfaces que el dominio/aplicacion necesitan (repositorios, IA, etc.)
 ├── adapters/
 │   ├── http/        Express: rutas y controllers
-│   ├── persistence/ Implementacion de repositorios con Prisma/PostgreSQL
+│   ├── persistence/ Repositorios Prisma (implementan ports/out) + PostgreSQL
 │   ├── socket/      Socket.IO (colaboracion en tiempo real)
 │   └── ai/          Cliente de Gemini
 ├── config/          Lectura de variables de entorno

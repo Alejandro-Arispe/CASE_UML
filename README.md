@@ -62,7 +62,8 @@ docker compose up -d
 cd Backend
 cp .env.example .env
 npm install
-npm run dev        # http://localhost:4000
+npm run prisma:migrate   # aplica el schema a la base (primera vez / tras cambiarlo)
+npm run dev               # http://localhost:4000
 
 # 3. Frontend
 cd Frontend
@@ -71,12 +72,25 @@ npm install
 npm run dev        # http://localhost:5173
 ```
 
+> **Nota de entorno (Windows):** el contenedor de PostgreSQL publica el
+> puerto **5433** en el host (no 5432), porque en algunas maquinas ya hay un
+> PostgreSQL nativo escuchando en 5432 y ambos procesos pueden bindear el
+> puerto sin error visible, causando fallos de autenticacion muy confusos al
+> conectar por el puerto equivocado. `Backend/.env.example` ya apunta a
+> `localhost:5433`. Si tu maquina no tiene ese conflicto, `docker-compose.yml`
+> se puede volver a mapear a `5432:5432` sin problema.
+
 ## Estado actual
 
-Fase 1 completada: proyecto base de React, Node/TypeScript (arquitectura
-hexagonal) y PostgreSQL (docker-compose) preparados y verificados
-(compilacion, arranque de servidor, health check y routing del frontend).
+Fase 5 completada: autenticacion (JWT + bcrypt), proyectos (crear, listar,
+invitacion por codigo, integrantes) y editor UML con React Flow (crear/
+editar/borrar clases, atributos y relaciones, con autoguardado por REST).
+Probado de punta a punta en navegador: login, creacion de proyecto, edicion
+del diagrama y persistencia verificada tras recargar la pagina.
 
-Las siguientes fases (dominio, persistencia, autenticacion, editor UML,
-colaboracion en tiempo real, historial, IA, validador y generador Spring
-Boot) se implementan de forma incremental.
+El estado del diagrama UML vive en un store propio (`Frontend/src/store/
+umlStore.ts`), independiente de React Flow: el canvas es una vista derivada
+de ese store, nunca la fuente de verdad (seccion 6).
+
+Las siguientes fases (colaboracion en tiempo real con Socket.IO, historial,
+IA, validador y generador Spring Boot) se implementan de forma incremental.

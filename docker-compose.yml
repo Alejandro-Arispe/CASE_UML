@@ -7,7 +7,9 @@ services:
       POSTGRES_USER: case_uml
       POSTGRES_PASSWORD: case_uml
     ports:
-      - "5432:5432"
+      # 5433 en el host: en esta maquina el 5432 nativo de Windows ya
+      # esta ocupado por otro PostgreSQL instalado localmente.
+      - "5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
 

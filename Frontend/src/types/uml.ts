@@ -2,16 +2,19 @@
 // El editor visual (React Flow) es una vista de este modelo, no la fuente
 // de verdad: la logica de validacion y generacion opera sobre estos tipos.
 
-export type UmlDataType =
-  | 'String'
-  | 'Integer'
-  | 'Long'
-  | 'Double'
-  | 'Boolean'
-  | 'BigDecimal'
-  | 'LocalDate'
-  | 'LocalDateTime'
-  | 'UUID';
+export const UML_DATA_TYPES = [
+  'String',
+  'Integer',
+  'Long',
+  'Double',
+  'Boolean',
+  'BigDecimal',
+  'LocalDate',
+  'LocalDateTime',
+  'UUID',
+] as const;
+
+export type UmlDataType = (typeof UML_DATA_TYPES)[number];
 
 export interface UmlAttribute {
   id: string;
