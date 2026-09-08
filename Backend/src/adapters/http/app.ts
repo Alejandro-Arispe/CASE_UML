@@ -5,8 +5,10 @@ import { container } from '../../config/container';
 import { healthRoutes } from './routes/health.routes';
 import { createAuthController } from './controllers/auth.controller';
 import { createAuthRoutes } from './routes/auth.routes';
+import { createHistoryController } from './controllers/history.controller';
 import { createProjectController } from './controllers/project.controller';
 import { createUmlModelController } from './controllers/umlModel.controller';
+import { createValidationController } from './controllers/validation.controller';
 import { createProjectRoutes } from './routes/project.routes';
 import { errorHandler } from './middlewares/errorHandler';
 
@@ -26,7 +28,18 @@ export function createApp() {
 
   const projectController = createProjectController(container);
   const umlModelController = createUmlModelController(container);
-  app.use('/api/projects', createProjectRoutes(projectController, umlModelController, container.tokenService));
+  const historyController = createHistoryController(container);
+  const validationController = createValidationController(container);
+  app.use(
+    '/api/projects',
+    createProjectRoutes(
+      projectController,
+      umlModelController,
+      historyController,
+      validationController,
+      container.tokenService,
+    ),
+  );
 
   // El manejador de errores va al final: traduce excepciones de
   // dominio/aplicacion a respuestas HTTP (ver errorHandler).

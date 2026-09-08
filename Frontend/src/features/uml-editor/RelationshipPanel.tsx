@@ -1,5 +1,6 @@
 import type { Multiplicity, RelationshipType } from '../../types/uml';
 import { useUmlStore } from '../../store/umlStore';
+import * as collaboration from './collaboration';
 
 const RELATIONSHIP_TYPES: RelationshipType[] = ['ONE_TO_ONE', 'ONE_TO_MANY', 'MANY_TO_ONE', 'MANY_TO_MANY'];
 const MULTIPLICITIES: Multiplicity[] = ['1', 'N'];
@@ -7,8 +8,6 @@ const MULTIPLICITIES: Multiplicity[] = ['1', 'N'];
 export function RelationshipPanel({ relationshipId }: { relationshipId: string }) {
   const relationship = useUmlStore((state) => state.relationships.find((r) => r.id === relationshipId));
   const classes = useUmlStore((state) => state.classes);
-  const updateRelationship = useUmlStore((state) => state.updateRelationship);
-  const removeRelationship = useUmlStore((state) => state.removeRelationship);
 
   if (!relationship) return null;
 
@@ -26,7 +25,7 @@ export function RelationshipPanel({ relationshipId }: { relationshipId: string }
       <select
         id="rel-type"
         value={relationship.type}
-        onChange={(e) => updateRelationship(relationship.id, { type: e.target.value as RelationshipType })}
+        onChange={(e) => collaboration.updateRelationshipType(relationship.id, e.target.value as RelationshipType)}
       >
         {RELATIONSHIP_TYPES.map((type) => (
           <option key={type} value={type}>
@@ -40,7 +39,11 @@ export function RelationshipPanel({ relationshipId }: { relationshipId: string }
         id="rel-source-mult"
         value={relationship.sourceMultiplicity}
         onChange={(e) =>
-          updateRelationship(relationship.id, { sourceMultiplicity: e.target.value as Multiplicity })
+          collaboration.setMultiplicity(
+            relationship.id,
+            e.target.value as Multiplicity,
+            relationship.targetMultiplicity,
+          )
         }
       >
         {MULTIPLICITIES.map((m) => (
@@ -55,7 +58,11 @@ export function RelationshipPanel({ relationshipId }: { relationshipId: string }
         id="rel-target-mult"
         value={relationship.targetMultiplicity}
         onChange={(e) =>
-          updateRelationship(relationship.id, { targetMultiplicity: e.target.value as Multiplicity })
+          collaboration.setMultiplicity(
+            relationship.id,
+            relationship.sourceMultiplicity,
+            e.target.value as Multiplicity,
+          )
         }
       >
         {MULTIPLICITIES.map((m) => (
@@ -66,7 +73,7 @@ export function RelationshipPanel({ relationshipId }: { relationshipId: string }
       </select>
 
       <hr />
-      <button type="button" onClick={() => removeRelationship(relationship.id)}>
+      <button type="button" onClick={() => collaboration.deleteRelationship(relationship.id)}>
         Eliminar relacion
       </button>
     </aside>

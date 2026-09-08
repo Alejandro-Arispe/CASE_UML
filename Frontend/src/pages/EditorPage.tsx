@@ -1,86 +1,97 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Background, Controls, MiniMap, ReactFlow } from '@xyflow/react';
 import type { Connection, EdgeMouseHandler, NodeMouseHandler, OnNodeDrag } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { getProjectDetail } from '../services/projectApi';
-import { getUmlModel, saveUmlModel } from '../services/umlApi';
+import { getProjectHistory } from '../services/historyApi';
 import type { Project, ProjectMember } from '../types/auth';
+import type { EditHistoryEntry } from '../types/history';
 import { useUmlStore } from '../store/umlStore';
 import { classToNode, relationshipToEdge } from '../features/uml-editor/umlToFlow';
 import { ClassNode } from '../features/uml-editor/ClassNode';
 import { ClassPanel } from '../features/uml-editor/ClassPanel';
 import { RelationshipPanel } from '../features/uml-editor/RelationshipPanel';
+import { HistoryPanel } from '../features/uml-editor/HistoryPanel';
+import { AiPanel } from '../features/uml-editor/AiPanel';
+import { ValidationPanel } from '../features/uml-editor/ValidationPanel';
+import * as collaboration from '../features/uml-editor/collaboration';
+import type { ConnectionStatus } from '../features/uml-editor/collaboration';
 
 const nodeTypes = { umlClass: ClassNode };
 
-type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
+const STATUS_LABEL: Record<ConnectionStatus, string> = {
+  connected: 'En linea',
+  connecting: 'Conectando...',
+  disconnected: 'Sin conexion (reintentando...)',
+};
 
 export function EditorPage() {
   const { projectId } = useParams();
   const [project, setProject] = useState<Project | null>(null);
   const [members, setMembers] = useState<ProjectMember[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
+  const [status, setStatus] = useState<ConnectionStatus>('connecting');
+  const [onlineUserIds, setOnlineUserIds] = useState<string[]>([]);
+  const [lastMovement, setLastMovement] = useState<EditHistoryEntry | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [aiOpen, setAiOpen] = useState(false);
+  const [validationOpen, setValidationOpen] = useState(false);
 
   const classes = useUmlStore((state) => state.classes);
   const relationships = useUmlStore((state) => state.relationships);
-  const version = useUmlStore((state) => state.version);
   const selectedClassId = useUmlStore((state) => state.selectedClassId);
   const selectedRelationshipId = useUmlStore((state) => state.selectedRelationshipId);
-  const loadModel = useUmlStore((state) => state.loadModel);
-  const addClass = useUmlStore((state) => state.addClass);
-  const addRelationship = useUmlStore((state) => state.addRelationship);
-  const moveClass = useUmlStore((state) => state.moveClass);
   const selectClass = useUmlStore((state) => state.selectClass);
   const selectRelationship = useUmlStore((state) => state.selectRelationship);
 
+  // Carga datos que no cambian por Socket.IO (nombre del proyecto, lista de
+  // integrantes del proyecto en si, distinta de quien esta conectado ahora).
   useEffect(() => {
     if (!projectId) return;
-    Promise.all([getProjectDetail(projectId), getUmlModel(projectId)])
-      .then(([detail, model]) => {
+    getProjectDetail(projectId)
+      .then((detail) => {
         setProject(detail.project);
         setMembers(detail.members);
-        loadModel(projectId, model);
       })
       .catch(() => setError('No se pudo cargar el proyecto (verifica que seas miembro)'));
-  }, [projectId, loadModel]);
 
-  // Autoguardado con debounce (seccion 24): no hay boton "Guardar", cada
-  // cambio programa un PUT del grafo completo tras un breve silencio.
-  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    // Ultimo movimiento ya existente, para no arrancar en blanco antes de
+    // que ocurra el primer cambio en vivo de esta sesion (seccion 27).
+    getProjectHistory(projectId, 1).then((entries) => {
+      if (entries[0]) setLastMovement(entries[0]);
+    });
+  }, [projectId]);
+
+  // Conexion de colaboracion en tiempo real (seccion 19-26): une la room del
+  // proyecto, sincroniza el modelo al conectar/reconectar y escucha
+  // presencia. Se desconecta al salir del editor.
   useEffect(() => {
-    if (!projectId || version === 0) return;
-
-    setSaveStatus('saving');
-    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-    saveTimeoutRef.current = setTimeout(() => {
-      saveUmlModel(projectId, classes, relationships)
-        .then(() => setSaveStatus('saved'))
-        .catch(() => setSaveStatus('error'));
-    }, 800);
-
+    if (!projectId) return;
+    collaboration.connectToProject(projectId);
+    const unsubStatus = collaboration.subscribeConnectionStatus(setStatus);
+    const unsubPresence = collaboration.subscribePresence(setOnlineUserIds);
+    const unsubHistory = collaboration.subscribeHistory(setLastMovement);
     return () => {
-      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+      unsubStatus();
+      unsubPresence();
+      unsubHistory();
+      collaboration.disconnectFromProject();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [version, projectId]);
+  }, [projectId]);
 
   const nodes = useMemo(() => classes.map(classToNode), [classes]);
   const edges = useMemo(() => relationships.map(relationshipToEdge), [relationships]);
 
-  const handleConnect = useCallback(
-    (connection: Connection) => {
-      if (connection.source && connection.target) {
-        addRelationship(connection.source, connection.target);
-      }
-    },
-    [addRelationship],
-  );
+  const handleConnect = useCallback((connection: Connection) => {
+    if (connection.source && connection.target) {
+      collaboration.createRelationship(connection.source, connection.target);
+    }
+  }, []);
 
   const handleNodeDragStop: OnNodeDrag = useCallback(
-    (_event, node) => moveClass(node.id, node.position),
-    [moveClass],
+    (_event, node) => collaboration.moveClass(node.id, node.position),
+    [],
   );
 
   const handleNodeClick: NodeMouseHandler = useCallback((_event, node) => selectClass(node.id), [selectClass]);
@@ -91,8 +102,13 @@ export function EditorPage() {
 
   function handleAddClass() {
     const offset = classes.length * 40;
-    addClass({ x: 80 + offset, y: 80 + offset });
+    collaboration.createClass({ x: 80 + offset, y: 80 + offset });
   }
+
+  const memberNames = useMemo(
+    () => Object.fromEntries(members.map((m) => [m.userId, m.userName])),
+    [members],
+  );
 
   if (error) {
     return (
@@ -111,21 +127,32 @@ export function EditorPage() {
         <button type="button" onClick={handleAddClass}>
           + Nueva clase
         </button>
-        <span>
-          {saveStatus === 'saving' && 'Guardando...'}
-          {saveStatus === 'saved' && 'Guardado'}
-          {saveStatus === 'error' && 'Error al guardar'}
-        </span>
+        <span>{STATUS_LABEL[status]}</span>
         <details>
           <summary>Integrantes ({members.length})</summary>
           <ul>
             {members.map((m) => (
               <li key={m.id}>
+                {onlineUserIds.includes(m.userId) ? '● ' : '○ '}
                 {m.userName} ({m.role})
               </li>
             ))}
           </ul>
         </details>
+        <span>
+          {lastMovement
+            ? `Ultimo movimiento: ${memberNames[lastMovement.userId] ?? 'Alguien'} - ${lastMovement.description}`
+            : 'Sin movimientos todavia'}
+        </span>
+        <button type="button" onClick={() => setHistoryOpen(true)}>
+          Ver historial de edicion
+        </button>
+        <button type="button" onClick={() => setAiOpen(true)}>
+          Asistente IA
+        </button>
+        <button type="button" onClick={() => setValidationOpen(true)}>
+          Validar modelo
+        </button>
       </header>
 
       <div style={{ flex: 1, display: 'flex' }}>
@@ -153,6 +180,14 @@ export function EditorPage() {
         {selectedClassId && <ClassPanel classId={selectedClassId} />}
         {selectedRelationshipId && <RelationshipPanel relationshipId={selectedRelationshipId} />}
       </div>
+
+      {historyOpen && projectId && (
+        <HistoryPanel projectId={projectId} memberNames={memberNames} onClose={() => setHistoryOpen(false)} />
+      )}
+      {aiOpen && <AiPanel onClose={() => setAiOpen(false)} />}
+      {validationOpen && projectId && (
+        <ValidationPanel projectId={projectId} onClose={() => setValidationOpen(false)} />
+      )}
     </div>
   );
 }

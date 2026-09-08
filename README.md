@@ -82,15 +82,74 @@ npm run dev        # http://localhost:5173
 
 ## Estado actual
 
-Fase 5 completada: autenticacion (JWT + bcrypt), proyectos (crear, listar,
-invitacion por codigo, integrantes) y editor UML con React Flow (crear/
-editar/borrar clases, atributos y relaciones, con autoguardado por REST).
-Probado de punta a punta en navegador: login, creacion de proyecto, edicion
-del diagrama y persistencia verificada tras recargar la pagina.
+Fase 6 completada: colaboracion en tiempo real con Socket.IO. El editor UML
+(Fase 5) ahora sincroniza cada cambio como una operacion granular (seccion
+22) sobre la room `project:{projectId}` (seccion 20), con el servidor como
+autoridad de revision (seccion 23) y presencia de integrantes conectados
+(seccion 25). El autoguardado por REST de la Fase 5 se mantiene disponible
+(`PUT /api/projects/:id/uml-model`) para reemplazos de grafo completo (por
+ejemplo, generacion desde IA en una fase futura), pero el editor interactivo
+ya no lo usa como via principal.
+
+Probado con dos clientes Socket.IO autenticados de forma independiente
+(simulando dos usuarios reales): uno crea una clase y el otro la ve
+aparecer sin recargar; el otro alterna un checkbox de un atributo y el
+primero recibe el cambio de inmediato. La presencia (integrantes en linea)
+tambien se actualizo correctamente al conectar/desconectar.
 
 El estado del diagrama UML vive en un store propio (`Frontend/src/store/
-umlStore.ts`), independiente de React Flow: el canvas es una vista derivada
-de ese store, nunca la fuente de verdad (seccion 6).
+umlStore.ts`), independiente de React Flow y de Socket.IO (seccion 6/45):
+el canvas es una vista derivada de ese store, y toda la logica de red vive
+aislada en `Frontend/src/features/uml-editor/collaboration.ts`.
 
-Las siguientes fases (colaboracion en tiempo real con Socket.IO, historial,
-IA, validador y generador Spring Boot) se implementan de forma incremental.
+Fase 7 completada: historial de edicion (seccion 27). Cada operacion
+aceptada por `ApplyUmlOperation` genera una entrada de `EditHistory` con
+una descripcion legible (ej. "Agrego telefono a Cliente", "Creo relacion
+Cliente - Pedido"), difundida en vivo a todos los conectados via el evento
+`history_entry`. El editor muestra el "Ultimo movimiento" en el header y un
+boton "Ver historial de edicion" que lista el historial completo
+(`GET /api/projects/:id/history`). Probado en navegador: crear clase,
+renombrarla, agregar y renombrar un atributo, verificando tanto la
+actualizacion en vivo como el listado completo.
+
+Fase 8 completada: IA con Gemini (secciones 28-30). El flujo es
+`IA -> comandos estructurados -> Action Engine -> UML interno -> Validacion
+-> Persistencia -> Socket.IO`, tal como pide el documento: la IA nunca
+escribe en la base ni decide como se persiste, solo produce una lista de
+comandos (`{"action": "ADD_ATTRIBUTE", ...}`) que referencian clases y
+atributos **por nombre** (no por UUID, para no depender de que el modelo
+invente IDs). `resolveAiCommands` los traduce a operaciones reales
+simulando el modelo paso a paso (asi un comando puede referirse a algo que
+otro comando de la misma respuesta acaba de crear), y cada operacion
+resuelta se aplica con el mismo `ApplyUmlOperation` de las fases 6/7: queda
+persistida, versionada y en el historial exactamente igual que un cambio
+manual, y se difunde en vivo a todos los conectados (incluido quien pidio
+el cambio, ya que ahi nadie aplico nada de forma optimista).
+
+El editor tiene un panel "Asistente IA" para escribir el pedido en lenguaje
+natural. Probado en navegador con el escenario de la seccion 56: "Crea un
+sistema basico de biblioteca con libros, autores, usuarios y prestamos"
+genero las 4 clases con su PK y las relaciones esperadas (Autor-Libro,
+Usuario-Prestamo, Prestamo-Libro); despues "Agrega correo a Usuario"
+identifico la clase existente y le agrego el atributo, sin duplicarla.
+
+> **Nota:** el modelo usado es `gemini-3.6-flash` (Google retiro
+> `gemini-2.5-flash` para cuentas nuevas). Requiere `GEMINI_API_KEY` en
+> `Backend/.env` (no se versiona).
+
+Fase 9 completada: validador del modelo UML (seccion 17), corre antes del
+generador. `Backend/src/domain/validation/validateUmlModel.ts` es una
+funcion pura de dominio que revisa el grafo completo (algo que ninguna
+entidad puede validar por si sola): clase sin nombre, clase duplicada,
+atributo sin nombre/tipo, entidad sin clave primaria (seccion 16), relacion
+hacia una clase inexistente, multiplicidad invalida e IDs duplicados.
+Expuesto en `GET /api/projects/:id/validate` y en un boton "Validar modelo"
+en el editor que lista los problemas encontrados (o confirma que el modelo
+es valido). Probado con casos unitarios de la funcion pura (modelo invalido
+con multiples problemas a la vez, y modelo valido) y en navegador: una
+clase sin PK marca el modelo como invalido, y al agregarle una clave
+primaria la validacion pasa a valida.
+
+La siguiente fase (generador Spring Boot) se implementa de forma
+incremental; el generador debera exigir un modelo valido antes de producir
+el backend (seccion 17: "No generar silenciosamente un backend invalido").
