@@ -4,6 +4,9 @@ import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { login } from '../services/authApi';
 import { useAuthStore } from '../store/authStore';
+import { AuthLayout } from '../components/AuthLayout';
+import { Button } from '../components/ui/Button';
+import { Input, Label } from '../components/ui/Input';
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -31,31 +34,48 @@ export function LoginPage() {
   }
 
   return (
-    <div>
-      <h1>Iniciar sesion</h1>
-      <form onSubmit={handleSubmit}>
+    <AuthLayout
+      title="Iniciar sesion"
+      subtitle="Entra a tus proyectos de modelado UML."
+      footer={
+        <>
+          No tenes cuenta?{' '}
+          <Link to="/register" className="font-medium text-indigo-600 hover:text-indigo-700">
+            Crear cuenta
+          </Link>
+        </>
+      }
+    >
+      <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label htmlFor="email">Correo</label>
-          <input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          <Label htmlFor="email">Correo</Label>
+          <Input
+            id="email"
+            type="email"
+            autoComplete="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            className="w-full"
+          />
         </div>
         <div>
-          <label htmlFor="password">Contrasena</label>
-          <input
+          <Label htmlFor="password">Contrasena</Label>
+          <Input
             id="password"
             type="password"
+            autoComplete="current-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
+            className="w-full"
           />
         </div>
-        {error && <p role="alert">{error}</p>}
-        <button type="submit" disabled={loading}>
+        {error && <p className="text-sm text-red-600">{error}</p>}
+        <Button type="submit" variant="primary" disabled={loading} className="w-full">
           {loading ? 'Ingresando...' : 'Ingresar'}
-        </button>
+        </Button>
       </form>
-      <p>
-        No tenes cuenta? <Link to="/register">Crear cuenta</Link>
-      </p>
-    </div>
+    </AuthLayout>
   );
 }

@@ -9,6 +9,7 @@ import { createHistoryController } from './controllers/history.controller';
 import { createProjectController } from './controllers/project.controller';
 import { createUmlModelController } from './controllers/umlModel.controller';
 import { createValidationController } from './controllers/validation.controller';
+import { createGeneratorController } from './controllers/generator.controller';
 import { createProjectRoutes } from './routes/project.routes';
 import { errorHandler } from './middlewares/errorHandler';
 
@@ -18,7 +19,24 @@ import { errorHandler } from './middlewares/errorHandler';
 export function createApp() {
   const app = express();
 
-  app.use(cors({ origin: env.corsOrigin, credentials: true }));
+  app.use(
+    cors({
+      origin: env.corsOrigin,
+      credentials: true,
+      // El frontend necesita leer estos headers en la descarga del backend
+      // generado (nombre de archivo, paquete, base de datos); por CORS, un
+      // header no listado aca es invisible para el JS del otro origen aunque
+      // este presente en la respuesta.
+      exposedHeaders: [
+        'Content-Disposition',
+        'X-Generated-Package',
+        'X-Generated-Database',
+        'X-Generated-Port',
+        'X-Generated-Db-Host',
+        'X-Generated-Db-Port',
+      ],
+    }),
+  );
   app.use(express.json());
 
   app.use('/api', healthRoutes);
@@ -30,6 +48,7 @@ export function createApp() {
   const umlModelController = createUmlModelController(container);
   const historyController = createHistoryController(container);
   const validationController = createValidationController(container);
+  const generatorController = createGeneratorController(container);
   app.use(
     '/api/projects',
     createProjectRoutes(
@@ -37,6 +56,7 @@ export function createApp() {
       umlModelController,
       historyController,
       validationController,
+      generatorController,
       container.tokenService,
     ),
   );

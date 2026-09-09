@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { getProjectHistory } from '../../services/historyApi';
 import type { EditHistoryEntry } from '../../types/history';
+import { Modal } from '../../components/ui/Modal';
 
 export function HistoryPanel({
   projectId,
@@ -21,37 +22,33 @@ export function HistoryPanel({
   }, [projectId]);
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.4)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 50,
-      }}
-      onClick={onClose}
-    >
-      <div
-        style={{ background: '#fff', padding: 16, minWidth: 360, maxHeight: '70vh', overflowY: 'auto' }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h2>Historial de edicion</h2>
-        {loading && <p>Cargando...</p>}
-        <ul>
-          {entries.map((entry) => (
-            <li key={entry.id}>
-              <strong>{new Date(entry.timestamp).toLocaleTimeString()}</strong>{' '}
-              {memberNames[entry.userId] ?? 'Alguien'} — {entry.description}
+    <Modal title="Historial de edicion" onClose={onClose} width="max-w-lg">
+      {loading && <p className="text-slate-400">Cargando...</p>}
+
+      {!loading && entries.length === 0 && (
+        <p className="text-slate-400">Todavia no hay movimientos registrados.</p>
+      )}
+
+      <ul className="space-y-1">
+        {entries.map((entry) => {
+          const name = memberNames[entry.userId] ?? 'Alguien';
+          return (
+            <li key={entry.id} className="flex items-start gap-3 rounded-md px-2 py-2 hover:bg-slate-50">
+              <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-[10px] font-semibold text-indigo-700">
+                {name.charAt(0).toUpperCase()}
+              </span>
+              <span className="min-w-0">
+                <span className="text-slate-700">
+                  <span className="font-medium text-slate-900">{name}</span> {entry.description}
+                </span>
+                <span className="block text-xs text-slate-400">
+                  {new Date(entry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              </span>
             </li>
-          ))}
-          {!loading && entries.length === 0 && <li>Todavia no hay movimientos registrados.</li>}
-        </ul>
-        <button type="button" onClick={onClose}>
-          Cerrar
-        </button>
-      </div>
-    </div>
+          );
+        })}
+      </ul>
+    </Modal>
   );
 }

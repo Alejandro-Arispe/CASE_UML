@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { validateProject } from '../../services/validationApi';
 import { useUmlStore } from '../../store/umlStore';
 import type { ValidationResult } from '../../types/validation';
+import { Modal } from '../../components/ui/Modal';
+import { Badge } from '../../components/ui/Badge';
 
 // Resuelve un elementId a algo legible para mostrar junto al mensaje del
 // issue (el mensaje del backend ya suele incluir el nombre, esto es un
@@ -30,44 +32,40 @@ export function ValidationPanel({ projectId, onClose }: { projectId: string; onC
   }, [projectId]);
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.4)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 50,
-      }}
-      onClick={onClose}
-    >
-      <div
-        style={{ background: '#fff', padding: 16, minWidth: 360, maxHeight: '70vh', overflowY: 'auto' }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h2>Validacion del modelo</h2>
-        {loading && <p>Validando...</p>}
+    <Modal title="Validacion del modelo" onClose={onClose}>
+      {loading && <p className="text-slate-400">Validando...</p>}
 
-        {!loading && result?.valid && <p>El modelo es valido: no se encontraron problemas.</p>}
+      {!loading && result?.valid && (
+        <div className="flex items-center gap-2 rounded-md bg-emerald-50 px-3 py-2.5 text-emerald-700">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5 shrink-0">
+            <path
+              fillRule="evenodd"
+              d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm3.857-9.809a.75.75 0 0 0-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 1 0-1.06 1.061l2.5 2.5a.75.75 0 0 0 1.137-.089l4-5.5Z"
+              clipRule="evenodd"
+            />
+          </svg>
+          <span className="text-sm font-medium">El modelo es valido: no se encontraron problemas.</span>
+        </div>
+      )}
 
-        {!loading && result && !result.valid && (
-          <>
-            <p>Se encontraron {result.issues.length} problema(s). El modelo no puede generarse hasta resolverlos:</p>
-            <ul>
-              {result.issues.map((issue, index) => (
-                <li key={`${issue.code}-${issue.elementId}-${index}`}>
-                  [{issue.elementType}: {elementLabel(issue.elementId)}] {issue.message}
-                </li>
-              ))}
-            </ul>
-          </>
-        )}
-
-        <button type="button" onClick={onClose}>
-          Cerrar
-        </button>
-      </div>
-    </div>
+      {!loading && result && !result.valid && (
+        <>
+          <div className="mb-3 flex items-center gap-2">
+            <Badge tone="danger">{result.issues.length} problema(s)</Badge>
+            <span className="text-sm text-slate-500">El modelo no puede generarse hasta resolverlos.</span>
+          </div>
+          <ul className="space-y-2">
+            {result.issues.map((issue, index) => (
+              <li key={`${issue.code}-${issue.elementId}-${index}`} className="rounded-md border border-red-100 bg-red-50 px-3 py-2">
+                <span className="text-xs font-medium uppercase tracking-wide text-red-500">
+                  {issue.elementType} · {elementLabel(issue.elementId)}
+                </span>
+                <p className="text-sm text-red-700">{issue.message}</p>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </Modal>
   );
 }

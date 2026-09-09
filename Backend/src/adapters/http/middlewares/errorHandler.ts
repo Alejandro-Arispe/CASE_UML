@@ -1,11 +1,14 @@
 import { NextFunction, Request, Response } from 'express';
-import { ConflictError, ForbiddenError, NotFoundError, UnauthorizedError } from '../../../application/errors';
+import { ConflictError, ForbiddenError, ModelInvalidError, NotFoundError, UnauthorizedError } from '../../../application/errors';
 import { DomainError } from '../../../domain/errors/DomainError';
 
 // Middleware de error unico: traduce las excepciones de dominio/aplicacion
 // al codigo HTTP correspondiente. Cualquier otro error se trata como fallo
 // interno y no expone su mensaje original al cliente.
 export function errorHandler(err: unknown, _req: Request, res: Response, _next: NextFunction) {
+  if (err instanceof ModelInvalidError) {
+    return res.status(400).json({ error: err.message, issues: err.issues });
+  }
   if (err instanceof DomainError) {
     return res.status(400).json({ error: err.message });
   }

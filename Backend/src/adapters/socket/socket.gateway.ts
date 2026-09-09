@@ -4,9 +4,11 @@ import { env } from '../../config/env';
 import { TokenService } from '../../ports/out/TokenService';
 import { ProjectMemberRepository } from '../../ports/out/ProjectMemberRepository';
 import { ApplyUmlOperation } from '../../application/use-cases/uml/ApplyUmlOperation';
+import { SaveUmlModel } from '../../application/use-cases/uml/SaveUmlModel';
 import { RunAiCommand } from '../../application/use-cases/ai/RunAiCommand';
 import { DomainError } from '../../domain/errors/DomainError';
 import { umlOperationSchema } from './umlOperation.schema';
+import { saveUmlModelSchema } from '../http/dto/umlModel.dto';
 
 interface SocketData {
   userId: string;
@@ -57,6 +59,7 @@ export function createSocketServer(
     members: ProjectMemberRepository;
     applyUmlOperation: ApplyUmlOperation;
     runAiCommand: RunAiCommand;
+    saveUmlModel: SaveUmlModel;
   },
 ) {
   const io = new SocketIOServer(httpServer, {
@@ -184,6 +187,41 @@ export function createSocketServer(
           ack?.({ ok: true, applied: applied.length, skipped: skipped.map((s) => ({ reason: s.reason })) });
         } catch (err) {
           const message = err instanceof DomainError || err instanceof Error ? err.message : 'Error al procesar el pedido';
+          ack?.({ ok: false, error: message });
+        }
+      },
+    );
+
+    socket.on(
+      'import_model',
+      async (rawPayload: unknown, ack?: (res: { ok: boolean; error?: string; revision?: number }) => void) => {
+        if (!data.projectId) {
+          ack?.({ ok: false, error: 'No estas unido a ningun proyecto' });
+          return;
+        }
+
+        const parsed = saveUmlModelSchema.safeParse(rawPayload);
+        if (!parsed.success) {
+          ack?.({ ok: false, error: 'El archivo importado no tiene un formato valido' });
+          return;
+        }
+
+        try {
+          const model = await deps.saveUmlModel.execute({
+            projectId: data.projectId,
+            userId: data.userId,
+            classes: parsed.data.classes,
+            relationships: parsed.data.relationships,
+          });
+
+          // Reemplazo total del modelo: a diferencia de uml_operation, no
+          // hay un set chico de campos que traducir a un evento puntual, asi
+          // que se avisa a TODOS (incluido quien importo) para que vuelvan a
+          // cargar el modelo completo desde el servidor.
+          io.to(projectRoom(data.projectId)).emit('model_replaced', model);
+          ack?.({ ok: true, revision: model.revision });
+        } catch (err) {
+          const message = err instanceof DomainError || err instanceof Error ? err.message : 'Error al importar el modelo';
           ack?.({ ok: false, error: message });
         }
       },

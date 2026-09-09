@@ -150,6 +150,66 @@ con multiples problemas a la vez, y modelo valido) y en navegador: una
 clase sin PK marca el modelo como invalido, y al agregarle una clave
 primaria la validacion pasa a valida.
 
-La siguiente fase (generador Spring Boot) se implementa de forma
-incremental; el generador debera exigir un modelo valido antes de producir
-el backend (seccion 17: "No generar silenciosamente un backend invalido").
+Fase 10 completada: generador Spring Boot (secciones 5, 15, 18, 31-42). Es
+deterministico y no usa IA (seccion 47): `Backend/src/generator/` traduce
+el UML validado (rechaza generar si `validateUmlModel` encuentra problemas,
+devolviendo los mismos issues que "Validar modelo") a un "Generation Model"
+con nombres normalizados a convenciones Java/PostgreSQL (seccion 18) y las
+relaciones resueltas al lado que posee la FK (seccion 12: en 1:N el lado N
+tiene `@ManyToOne`; en N:M, `@ManyToMany` unidireccional con `@JoinTable`).
+Por cada clase genera `model/`, `repository/`, `service/`, `controller/` y
+`dto/` (Request/Response, seccion 34), mas `Application.java`, `pom.xml`,
+`application.yml` y `schema.sql` (seccion 37, solo de referencia: Hibernate
+administra el esquema real con `ddl-auto=update`). Cada proyecto generado
+usa su propia base de datos (`gen_<id>`, creada automaticamente en el mismo
+Postgres de la plataforma) para no mezclar datos de negocio con los de
+CASE_UML. Expuesto en `POST /api/projects/:id/generate-backend` y en el
+boton "Generar backend" del editor (con confirmacion, seccion 40).
+
+Se genero y **corrio de verdad** el ejemplo completo de la seccion 41
+(Cliente 1--N Pedido): `mvn compile` compilo sin errores, `mvn spring-boot:run`
+levanto la app, Hibernate creo las tablas con la FK correcta
+(`pedido.cliente_id -> cliente.id`), Swagger expuso `/api/clientes` y
+`/api/pedidos`, y se probo el CRUD completo por HTTP (crear, listar, obtener,
+actualizar y borrar, incluida la validacion `@NotNull` rechazando un campo
+requerido faltante) — el flujo de principio a fin de la seccion 54.
+
+> **Nota de entorno:** para que Maven pudiera descargar dependencias hizo
+> falta resolver un problema de certificados TLS causado por el escaneo
+> SSL de Norton Antivirus (su certificado raiz no estaba en el truststore
+> de Java). Se soluciono con una copia local de `cacerts` con ese
+> certificado importado (`C:\Users\<usuario>\.m2-truststore\cacerts`), sin
+> tocar el `cacerts` del JDK (que requeria permisos de administrador). Para
+> compilar/ejecutar un backend generado hay que exportar:
+> `MAVEN_OPTS="-Djavax.net.ssl.trustStore=<esa-ruta> -Djavax.net.ssl.trustStorePassword=changeit"`
+
+## Fase 12: integracion final
+
+Prueba de punta a punta combinando todas las fases en una sola corrida
+(seccion 52, Fase 12), no cada pieza por separado sino todo el sistema
+funcionando junto:
+
+1. Dos usuarios (Angel, Maria) se registran; Angel crea un proyecto y Maria
+   se une por codigo de invitacion.
+2. Ambos conectados por Socket.IO al mismo proyecto (presencia confirmada).
+3. Angel le pide a la IA: *"Crea un sistema de tienda con Producto (nombre,
+   precio) y Categoria (nombre), donde una Categoria tiene muchos
+   Productos"* → la IA genera las 2 clases, sus atributos y la relacion
+   (8 operaciones) en un solo pedido.
+4. Angel pide *"Agrega stock a Producto"* → Maria, conectada de forma
+   independiente, recibe `attribute_created` e `history_entry` **en vivo**,
+   confirmando que colaboracion + IA + historial funcionan juntos, no solo
+   por separado.
+5. "Validar modelo" confirma que el modelo generado por la IA es valido
+   (la IA agrega PK por defecto, seccion 30).
+6. "Generar backend" produce el proyecto Spring Boot.
+7. `mvn compile` sin errores, `mvn spring-boot:run` levanta la app: Hibernate
+   crea `categoria`/`producto` con la FK y el `NOT NULL` en `stock`
+   correctos.
+8. CRUD real por HTTP: crear Categoria, crear Producto referenciandola,
+   listar — swagger expone `/api/categorias` y `/api/productos`.
+9. "Ver historial" en el editor lista las 9 operaciones en orden correcto,
+   todas atribuidas a Angel (quien escribio los pedidos a la IA).
+
+Con esto las 12 fases del documento estan implementadas y verificadas
+funcionando en conjunto, no solo de forma aislada.

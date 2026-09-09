@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { TokenService } from '../../../ports/out/TokenService';
+import { createGeneratorController } from '../controllers/generator.controller';
 import { createHistoryController } from '../controllers/history.controller';
 import { createProjectController } from '../controllers/project.controller';
 import { createUmlModelController } from '../controllers/umlModel.controller';
@@ -14,6 +15,7 @@ export function createProjectRoutes(
   umlModelController: ReturnType<typeof createUmlModelController>,
   historyController: ReturnType<typeof createHistoryController>,
   validationController: ReturnType<typeof createValidationController>,
+  generatorController: ReturnType<typeof createGeneratorController>,
   tokenService: TokenService,
 ) {
   const router = Router();
@@ -28,6 +30,7 @@ export function createProjectRoutes(
   router.put('/:id/uml-model', validateBody(saveUmlModelSchema), umlModelController.save);
   router.get('/:id/history', historyController.list);
   router.get('/:id/validate', validationController.validate);
+  router.post('/:id/generate-backend', generatorController.generate);
 
   return router;
 }

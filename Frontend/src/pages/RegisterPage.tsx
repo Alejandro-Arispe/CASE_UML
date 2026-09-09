@@ -4,6 +4,9 @@ import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { login, register } from '../services/authApi';
 import { useAuthStore } from '../store/authStore';
+import { AuthLayout } from '../components/AuthLayout';
+import { Button } from '../components/ui/Button';
+import { Input, Label } from '../components/ui/Input';
 
 export function RegisterPage() {
   const navigate = useNavigate();
@@ -35,36 +38,62 @@ export function RegisterPage() {
   }
 
   return (
-    <div>
-      <h1>Crear cuenta</h1>
-      <form onSubmit={handleSubmit}>
+    <AuthLayout
+      title="Crear cuenta"
+      subtitle="Empeza a modelar tus proyectos en minutos."
+      footer={
+        <>
+          Ya tenes cuenta?{' '}
+          <Link to="/login" className="font-medium text-indigo-600 hover:text-indigo-700">
+            Iniciar sesion
+          </Link>
+        </>
+      }
+    >
+      <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label htmlFor="name">Nombre</label>
-          <input id="name" type="text" value={name} onChange={(e) => setName(e.target.value)} required />
+          <Label htmlFor="name">Nombre</Label>
+          <Input
+            id="name"
+            type="text"
+            autoComplete="name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+            className="w-full"
+          />
         </div>
         <div>
-          <label htmlFor="email">Correo</label>
-          <input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          <Label htmlFor="email">Correo</Label>
+          <Input
+            id="email"
+            type="email"
+            autoComplete="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            className="w-full"
+          />
         </div>
         <div>
-          <label htmlFor="password">Contrasena</label>
-          <input
+          <Label htmlFor="password">Contrasena</Label>
+          <Input
             id="password"
             type="password"
+            autoComplete="new-password"
             minLength={8}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
+            className="w-full"
           />
+          <p className="mt-1 text-xs text-slate-400">Minimo 8 caracteres.</p>
         </div>
-        {error && <p role="alert">{error}</p>}
-        <button type="submit" disabled={loading}>
+        {error && <p className="text-sm text-red-600">{error}</p>}
+        <Button type="submit" variant="primary" disabled={loading} className="w-full">
           {loading ? 'Creando...' : 'Crear cuenta'}
-        </button>
+        </Button>
       </form>
-      <p>
-        Ya tenes cuenta? <Link to="/login">Iniciar sesion</Link>
-      </p>
-    </div>
+    </AuthLayout>
   );
 }

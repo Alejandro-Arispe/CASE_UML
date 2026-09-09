@@ -11,6 +11,7 @@ import { LoginUser } from '../application/use-cases/auth/LoginUser';
 import { RegisterUser } from '../application/use-cases/auth/RegisterUser';
 import { RunAiCommand } from '../application/use-cases/ai/RunAiCommand';
 import { ListProjectHistory } from '../application/use-cases/history/ListProjectHistory';
+import { GenerateBackend } from '../application/use-cases/generator/GenerateBackend';
 import { CreateProject } from '../application/use-cases/projects/CreateProject';
 import { GetProjectDetail } from '../application/use-cases/projects/GetProjectDetail';
 import { JoinProjectByInviteCode } from '../application/use-cases/projects/JoinProjectByInviteCode';
@@ -54,4 +55,6 @@ export const container = {
   listProjectHistory: new ListProjectHistory(editHistoryRepository, projectMemberRepository),
 
   runAiCommand: new RunAiCommand(umlModelRepository, projectMemberRepository, applyUmlOperation, aiModelClient),
+
+  generateBackend: new GenerateBackend(umlModelRepository, projectMemberRepository, projectRepository),
 };

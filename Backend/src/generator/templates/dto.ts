@@ -1,0 +1,104 @@
+import { GenClass, GenerationModel } from '../GenerationModel';
+import { capitalize, generatedFileHeader } from './javaUtil';
+
+// Los Controllers trabajan con DTOs, no con las entidades (seccion 34): el
+// RequestDTO no incluye el id (lo asigna la base al crear, y en update va
+// en la URL), y las referencias a otras clases se aplanan a su id para
+// evitar exponer el grafo de entidades completo (evita ciclos JSON, seccion 12).
+
+export function renderRequestDto(model: GenerationModel, klass: GenClass): string {
+  const imports = new Set<string>();
+  for (const attr of klass.attributes) {
+    if (attr.javaImport) imports.add(attr.javaImport);
+  }
+
+  const fields: string[] = [];
+  const gettersSetters: string[] = [];
+
+  for (const attr of klass.attributes) {
+    if (!attr.nullable) {
+      fields.push(`    @NotNull\n    private ${attr.javaType} ${attr.fieldName};`);
+    } else {
+      fields.push(`    private ${attr.javaType} ${attr.fieldName};`);
+    }
+    gettersSetters.push(
+      `    public ${attr.javaType} get${capitalize(attr.fieldName)}() {\n        return ${attr.fieldName};\n    }\n\n` +
+        `    public void set${capitalize(attr.fieldName)}(${attr.javaType} ${attr.fieldName}) {\n        this.${attr.fieldName} = ${attr.fieldName};\n    }`,
+    );
+  }
+
+  for (const ref of klass.singleRefs) {
+    const fieldName = `${ref.fieldName}Id`;
+    fields.push(`    private ${ref.referencedPkJavaType} ${fieldName};`);
+    gettersSetters.push(
+      `    public ${ref.referencedPkJavaType} get${capitalize(fieldName)}() {\n        return ${fieldName};\n    }\n\n` +
+        `    public void set${capitalize(fieldName)}(${ref.referencedPkJavaType} ${fieldName}) {\n        this.${fieldName} = ${fieldName};\n    }`,
+    );
+  }
+
+  const importLines = Array.from(imports)
+    .sort()
+    .map((i) => `import ${i};`)
+    .join('\n');
+
+  return `${generatedFileHeader(`DTO de entrada de "${klass.className}".`)}
+package ${model.packageName}.dto;
+
+import jakarta.validation.constraints.NotNull;
+${importLines ? importLines + '\n' : ''}
+public class ${klass.className}RequestDTO {
+
+${fields.join('\n\n')}
+
+${gettersSetters.join('\n\n')}
+}
+`;
+}
+
+export function renderResponseDto(model: GenerationModel, klass: GenClass): string {
+  const imports = new Set<string>();
+  for (const attr of klass.attributes) {
+    if (attr.javaImport) imports.add(attr.javaImport);
+  }
+  if (klass.pkAttribute.javaImport) imports.add(klass.pkAttribute.javaImport);
+
+  const fields: string[] = [`    private ${klass.pkAttribute.javaType} id;`];
+  const gettersSetters: string[] = [
+    `    public ${klass.pkAttribute.javaType} getId() {\n        return id;\n    }\n\n` +
+      `    public void setId(${klass.pkAttribute.javaType} id) {\n        this.id = id;\n    }`,
+  ];
+
+  for (const attr of klass.attributes) {
+    fields.push(`    private ${attr.javaType} ${attr.fieldName};`);
+    gettersSetters.push(
+      `    public ${attr.javaType} get${capitalize(attr.fieldName)}() {\n        return ${attr.fieldName};\n    }\n\n` +
+        `    public void set${capitalize(attr.fieldName)}(${attr.javaType} ${attr.fieldName}) {\n        this.${attr.fieldName} = ${attr.fieldName};\n    }`,
+    );
+  }
+
+  for (const ref of klass.singleRefs) {
+    const fieldName = `${ref.fieldName}Id`;
+    fields.push(`    private ${ref.referencedPkJavaType} ${fieldName};`);
+    gettersSetters.push(
+      `    public ${ref.referencedPkJavaType} get${capitalize(fieldName)}() {\n        return ${fieldName};\n    }\n\n` +
+        `    public void set${capitalize(fieldName)}(${ref.referencedPkJavaType} ${fieldName}) {\n        this.${fieldName} = ${fieldName};\n    }`,
+    );
+  }
+
+  const importLines = Array.from(imports)
+    .sort()
+    .map((i) => `import ${i};`)
+    .join('\n');
+
+  return `${generatedFileHeader(`DTO de salida de "${klass.className}".`)}
+package ${model.packageName}.dto;
+
+${importLines ? importLines + '\n' : ''}
+public class ${klass.className}ResponseDTO {
+
+${fields.join('\n')}
+
+${gettersSetters.join('\n\n')}
+}
+`;
+}

@@ -11,6 +11,7 @@ createSocketServer(httpServer, {
   members: container.projectMemberRepository,
   applyUmlOperation: container.applyUmlOperation,
   runAiCommand: container.runAiCommand,
+  saveUmlModel: container.saveUmlModel,
 });
 
 httpServer.listen(env.port, () => {

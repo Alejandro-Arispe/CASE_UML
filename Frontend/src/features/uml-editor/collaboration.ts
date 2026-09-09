@@ -1,7 +1,7 @@
 import { getSocket } from '../../services/socket';
 import { getUmlModel } from '../../services/umlApi';
 import { useUmlStore } from '../../store/umlStore';
-import type { Multiplicity, RelationshipType, UmlAttribute, UmlDataType } from '../../types/uml';
+import type { Multiplicity, RelationshipType, UmlAttribute, UmlClass, UmlDataType, UmlModel, UmlRelationship } from '../../types/uml';
 import type { EditHistoryEntry } from '../../types/history';
 
 // Capa de colaboracion: unico lugar del frontend que conoce Socket.IO.
@@ -73,6 +73,7 @@ export function connectToProject(projectId: string) {
   socket.off('relationship_updated');
   socket.off('relationship_deleted');
   socket.off('history_entry');
+  socket.off('model_replaced');
 
   socket.on('connect', () => {
     setStatus('connected');
@@ -107,6 +108,11 @@ export function connectToProject(projectId: string) {
   // Historial (seccion 27): se difunde a todos, incluido quien hizo el
   // cambio, para alimentar el "ultimo movimiento" en vivo.
   socket.on('history_entry', (entry: EditHistoryEntry) => historyListeners.forEach((l) => l(entry)));
+
+  // Importar reemplaza el grafo entero: no hay un set chico de campos que
+  // traducir a un evento puntual, asi que todos (incluido quien importo)
+  // simplemente recargan el modelo completo recibido.
+  socket.on('model_replaced', (model: UmlModel) => useUmlStore.getState().loadModel(projectId, model));
 
   if (socket.connected) {
     setStatus('connected');
@@ -249,4 +255,26 @@ export function sendAiPrompt(prompt: string): Promise<AiCommandResult> {
       resolve(ack ?? { ok: false, error: 'Sin respuesta del servidor' });
     });
   });
+}
+
+export interface ImportModelResult {
+  ok: boolean;
+  error?: string;
+}
+
+// Reemplaza el modelo completo del proyecto (clases + relaciones). El
+// servidor valida forma y pertenencia; el resultado llega para todos via
+// el evento 'model_replaced' (incluido quien importo).
+export function importModel(classes: UmlClass[], relationships: UmlRelationship[]): Promise<ImportModelResult> {
+  return new Promise((resolve) => {
+    const socket = getSocket();
+    socket.emit('import_model', { classes, relationships }, (ack?: ImportModelResult) => {
+      resolve(ack ?? { ok: false, error: 'Sin respuesta del servidor' });
+    });
+  });
+}
+
+export function exportModel(): { classes: UmlClass[]; relationships: UmlRelationship[] } {
+  const state = useUmlStore.getState();
+  return { classes: state.classes, relationships: state.relationships };
 }

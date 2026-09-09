@@ -88,6 +88,7 @@ export const useUmlStore = create<UmlState>((set) => ({
     set((state) => ({
       classes: [...state.classes, { id: classId, name, position, attributes: [] }],
       selectedClassId: classId,
+      selectedRelationshipId: null,
     })),
 
   applyRenameClass: ({ classId, name }) =>
@@ -161,6 +162,7 @@ export const useUmlStore = create<UmlState>((set) => ({
         },
       ],
       selectedRelationshipId: op.relationshipId,
+      selectedClassId: null,
     })),
 
   applyUpdateRelationship: ({ relationshipId, type }) =>

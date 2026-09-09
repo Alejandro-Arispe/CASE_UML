@@ -14,19 +14,12 @@ export function classToNode(klass: UmlClass): Node {
   };
 }
 
-const RELATIONSHIP_LABEL: Record<UmlRelationship['type'], string> = {
-  ONE_TO_ONE: '1 a 1',
-  ONE_TO_MANY: '1 a N',
-  MANY_TO_ONE: 'N a 1',
-  MANY_TO_MANY: 'N a M',
-};
-
 export function relationshipToEdge(rel: UmlRelationship): Edge {
   return {
     id: rel.id,
     source: rel.sourceClassId,
     target: rel.targetClassId,
-    label: `${rel.sourceMultiplicity} · ${RELATIONSHIP_LABEL[rel.type]} · ${rel.targetMultiplicity}`,
+    type: 'association',
     data: { relationship: rel },
   };
 }

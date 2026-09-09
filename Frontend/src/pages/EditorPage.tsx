@@ -10,20 +10,25 @@ import type { EditHistoryEntry } from '../types/history';
 import { useUmlStore } from '../store/umlStore';
 import { classToNode, relationshipToEdge } from '../features/uml-editor/umlToFlow';
 import { ClassNode } from '../features/uml-editor/ClassNode';
+import { AssociationEdge } from '../features/uml-editor/AssociationEdge';
 import { ClassPanel } from '../features/uml-editor/ClassPanel';
 import { RelationshipPanel } from '../features/uml-editor/RelationshipPanel';
 import { HistoryPanel } from '../features/uml-editor/HistoryPanel';
 import { AiPanel } from '../features/uml-editor/AiPanel';
 import { ValidationPanel } from '../features/uml-editor/ValidationPanel';
+import { GeneratorPanel } from '../features/uml-editor/GeneratorPanel';
+import { ImportExportControls } from '../features/uml-editor/ImportExportControls';
 import * as collaboration from '../features/uml-editor/collaboration';
 import type { ConnectionStatus } from '../features/uml-editor/collaboration';
+import { Button } from '../components/ui/Button';
 
 const nodeTypes = { umlClass: ClassNode };
+const edgeTypes = { association: AssociationEdge };
 
-const STATUS_LABEL: Record<ConnectionStatus, string> = {
-  connected: 'En linea',
-  connecting: 'Conectando...',
-  disconnected: 'Sin conexion (reintentando...)',
+const STATUS_STYLE: Record<ConnectionStatus, { label: string; dot: string }> = {
+  connected: { label: 'En linea', dot: 'bg-emerald-500' },
+  connecting: { label: 'Conectando...', dot: 'bg-amber-500' },
+  disconnected: { label: 'Sin conexion', dot: 'bg-red-500' },
 };
 
 export function EditorPage() {
@@ -34,9 +39,11 @@ export function EditorPage() {
   const [status, setStatus] = useState<ConnectionStatus>('connecting');
   const [onlineUserIds, setOnlineUserIds] = useState<string[]>([]);
   const [lastMovement, setLastMovement] = useState<EditHistoryEntry | null>(null);
+  const [membersOpen, setMembersOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
   const [validationOpen, setValidationOpen] = useState(false);
+  const [generatorOpen, setGeneratorOpen] = useState(false);
 
   const classes = useUmlStore((state) => state.classes);
   const relationships = useUmlStore((state) => state.relationships);
@@ -112,55 +119,108 @@ export function EditorPage() {
 
   if (error) {
     return (
-      <div>
-        <p role="alert">{error}</p>
-        <Link to="/projects">Volver a mis proyectos</Link>
+      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-slate-50 px-4 text-center">
+        <p className="text-sm text-red-600">{error}</p>
+        <Link to="/projects" className="text-sm font-medium text-indigo-600 hover:text-indigo-700">
+          Volver a mis proyectos
+        </Link>
       </div>
     );
   }
 
+  const statusStyle = STATUS_STYLE[status];
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
-      <header style={{ display: 'flex', gap: 12, alignItems: 'center', padding: 8, borderBottom: '1px solid #ddd' }}>
-        <Link to="/projects">Mis proyectos</Link>
-        <h1 style={{ fontSize: 18, margin: 0 }}>{project ? project.name : 'Cargando...'}</h1>
-        <button type="button" onClick={handleAddClass}>
-          + Nueva clase
-        </button>
-        <span>{STATUS_LABEL[status]}</span>
-        <details>
-          <summary>Integrantes ({members.length})</summary>
-          <ul>
-            {members.map((m) => (
-              <li key={m.id}>
-                {onlineUserIds.includes(m.userId) ? '● ' : '○ '}
-                {m.userName} ({m.role})
-              </li>
-            ))}
-          </ul>
-        </details>
-        <span>
-          {lastMovement
-            ? `Ultimo movimiento: ${memberNames[lastMovement.userId] ?? 'Alguien'} - ${lastMovement.description}`
-            : 'Sin movimientos todavia'}
+    <div className="flex h-screen flex-col bg-slate-50">
+      <header className="flex flex-wrap items-center gap-3 border-b border-slate-200 bg-white px-4 py-2.5">
+        <Link to="/projects" className="text-sm text-slate-400 hover:text-slate-600">
+          &larr; Mis proyectos
+        </Link>
+        <span className="text-slate-200">|</span>
+        <h1 className="truncate text-sm font-semibold text-slate-900">{project ? project.name : 'Cargando...'}</h1>
+
+        <span className="flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
+          <span className={`h-1.5 w-1.5 rounded-full ${statusStyle.dot}`} />
+          {statusStyle.label}
         </span>
-        <button type="button" onClick={() => setHistoryOpen(true)}>
-          Ver historial de edicion
-        </button>
-        <button type="button" onClick={() => setAiOpen(true)}>
-          Asistente IA
-        </button>
-        <button type="button" onClick={() => setValidationOpen(true)}>
-          Validar modelo
-        </button>
+
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setMembersOpen((v) => !v)}
+            className="flex items-center gap-1 rounded-full py-1 pl-1 pr-2.5 text-xs font-medium text-slate-600 hover:bg-slate-100"
+          >
+            <span className="flex -space-x-1.5">
+              {members.slice(0, 4).map((m) => (
+                <span
+                  key={m.id}
+                  title={m.userName}
+                  className={`flex h-6 w-6 items-center justify-center rounded-full border-2 border-white text-[10px] font-semibold text-white ${
+                    onlineUserIds.includes(m.userId) ? 'bg-emerald-500' : 'bg-slate-300'
+                  }`}
+                >
+                  {m.userName.charAt(0).toUpperCase()}
+                </span>
+              ))}
+            </span>
+            {members.length}
+          </button>
+
+          {membersOpen && (
+            <div className="absolute left-0 top-full z-30 mt-1 w-56 rounded-md border border-slate-200 bg-white py-1 shadow-lg">
+              {members.map((m) => (
+                <div key={m.id} className="flex items-center justify-between px-3 py-1.5 text-sm">
+                  <span className="flex items-center gap-2 text-slate-700">
+                    <span
+                      className={`h-1.5 w-1.5 rounded-full ${onlineUserIds.includes(m.userId) ? 'bg-emerald-500' : 'bg-slate-300'}`}
+                    />
+                    {m.userName}
+                  </span>
+                  <span className="text-xs text-slate-400">{m.role}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <Button size="sm" onClick={() => setAiOpen(true)}>
+            Asistente IA
+          </Button>
+          <Button size="sm" onClick={() => setHistoryOpen(true)}>
+            Historial
+          </Button>
+          <Button size="sm" onClick={() => setValidationOpen(true)}>
+            Validar modelo
+          </Button>
+          <Button size="sm" variant="primary" onClick={() => setGeneratorOpen(true)}>
+            Generar backend
+          </Button>
+          <Button size="sm" variant="primary" onClick={handleAddClass}>
+            + Nueva clase
+          </Button>
+        </div>
       </header>
 
-      <div style={{ flex: 1, display: 'flex' }}>
-        <div style={{ flex: 1 }}>
+      <div className="flex items-center justify-between gap-3 border-b border-slate-100 bg-white px-4 py-1.5 text-xs text-slate-500">
+        {lastMovement ? (
+          <span className="truncate">
+            <span className="font-medium text-slate-700">{memberNames[lastMovement.userId] ?? 'Alguien'}</span>{' '}
+            {lastMovement.description}
+          </span>
+        ) : (
+          <span className="text-slate-400">Sin movimientos todavia</span>
+        )}
+        <ImportExportControls projectName={project?.name ?? 'modelo'} />
+      </div>
+
+      <div className="flex flex-1 overflow-hidden">
+        <div className="flex-1">
           <ReactFlow
             nodes={nodes}
             edges={edges}
             nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
             onConnect={handleConnect}
             onNodeDragStop={handleNodeDragStop}
             onNodeClick={handleNodeClick}
@@ -168,12 +228,13 @@ export function EditorPage() {
             onPaneClick={() => {
               selectClass(null);
               selectRelationship(null);
+              setMembersOpen(false);
             }}
             fitView
           >
-            <Background />
+            <Background color="#cbd5e1" gap={20} />
             <Controls />
-            <MiniMap />
+            <MiniMap pannable zoomable className="!bg-white" />
           </ReactFlow>
         </div>
 
@@ -187,6 +248,9 @@ export function EditorPage() {
       {aiOpen && <AiPanel onClose={() => setAiOpen(false)} />}
       {validationOpen && projectId && (
         <ValidationPanel projectId={projectId} onClose={() => setValidationOpen(false)} />
+      )}
+      {generatorOpen && projectId && (
+        <GeneratorPanel projectId={projectId} onClose={() => setGeneratorOpen(false)} />
       )}
     </div>
   );

@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import * as collaboration from './collaboration';
+import { Button } from '../../components/ui/Button';
+import { Textarea } from '../../components/ui/Input';
 
 // Panel de IA (secciones 28-30): el usuario describe en lenguaje natural
 // que quiere y la IA produce comandos estructurados que el backend valida
@@ -10,7 +12,7 @@ import * as collaboration from './collaboration';
 export function AiPanel({ onClose }: { onClose: () => void }) {
   const [prompt, setPrompt] = useState('');
   const [loading, setLoading] = useState(false);
-  const [feedback, setFeedback] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -22,39 +24,51 @@ export function AiPanel({ onClose }: { onClose: () => void }) {
     setLoading(false);
 
     if (!result.ok) {
-      setFeedback(`Error: ${result.error}`);
+      setFeedback({ tone: 'error', text: result.error ?? 'No se pudo procesar el pedido' });
       return;
     }
 
     const skippedCount = result.skipped?.length ?? 0;
-    setFeedback(
-      `Se aplicaron ${result.applied ?? 0} cambios.` +
+    setFeedback({
+      tone: 'ok',
+      text:
+        `Se aplicaron ${result.applied ?? 0} cambios.` +
         (skippedCount > 0 ? ` ${skippedCount} comando(s) omitidos: ${result.skipped!.map((s) => s.reason).join('; ')}` : ''),
-    );
+    });
     setPrompt('');
   }
 
   return (
-    <aside style={{ position: 'fixed', right: 16, bottom: 16, width: 320, background: '#fff', border: '1px solid #ccc', padding: 12 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-        <h3 style={{ margin: 0 }}>Asistente IA</h3>
-        <button type="button" onClick={onClose}>
-          x
+    <aside className="fixed bottom-4 right-4 z-40 flex w-80 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl">
+      <div className="flex items-center justify-between border-b border-slate-200 bg-indigo-600 px-4 py-2.5">
+        <span className="text-sm font-semibold text-white">Asistente IA</span>
+        <button type="button" onClick={onClose} aria-label="Cerrar" className="text-indigo-100 hover:text-white">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+            <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" />
+          </svg>
         </button>
       </div>
-      <form onSubmit={handleSubmit}>
-        <textarea
+
+      <form onSubmit={handleSubmit} className="space-y-2 p-3">
+        <Textarea
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           placeholder='Ej: "Crea un sistema basico de biblioteca con libros, autores, usuarios y prestamos" o "Agrega telefono a Cliente"'
           rows={4}
-          style={{ width: '100%' }}
+          className="w-full"
         />
-        <button type="submit" disabled={loading}>
+        <Button type="submit" variant="primary" disabled={loading} className="w-full">
           {loading ? 'Pensando...' : 'Enviar'}
-        </button>
+        </Button>
       </form>
-      {feedback && <p>{feedback}</p>}
+
+      {feedback && (
+        <p
+          className={`px-3 pb-3 text-xs ${feedback.tone === 'error' ? 'text-red-600' : 'text-slate-500'}`}
+        >
+          {feedback.text}
+        </p>
+      )}
     </aside>
   );
 }
