@@ -42,6 +42,7 @@ export function renderRequestDto(model: GenerationModel, klass: GenClass): strin
   }
 
   for (const ref of klass.singleRefs) {
+    if (ref.referencedPkJavaImport) imports.add(ref.referencedPkJavaImport);
     const fieldName = `${ref.fieldName}Id`;
     fields.push(`    private ${ref.referencedPkJavaType} ${fieldName};`);
     gettersSetters.push(
@@ -91,6 +92,7 @@ export function renderResponseDto(model: GenerationModel, klass: GenClass): stri
   }
 
   for (const ref of klass.singleRefs) {
+    if (ref.referencedPkJavaImport) imports.add(ref.referencedPkJavaImport);
     const fieldName = `${ref.fieldName}Id`;
     fields.push(`    private ${ref.referencedPkJavaType} ${fieldName};`);
     gettersSetters.push(

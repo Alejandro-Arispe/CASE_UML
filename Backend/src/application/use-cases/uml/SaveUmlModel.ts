@@ -1,12 +1,13 @@
 import { createUmlModel, UmlClass, UmlModel, UmlRelationship } from '../../../domain/entities';
 import { ProjectMemberRepository } from '../../../ports/out/ProjectMemberRepository';
 import { UmlModelRepository } from '../../../ports/out/UmlModelRepository';
-import { ForbiddenError } from '../../errors';
+import { concurrencyBackoff, MAX_CONCURRENCY_RETRIES } from '../../concurrencyRetry';
+import { ConflictError, ForbiddenError } from '../../errors';
 
 // Guarda el grafo completo (clases + relaciones) y avanza la revision.
-// Es la persistencia simple de la Fase 5 (autoguardado por REST); la Fase 6
-// reemplaza/complementa esto con operaciones granulares via Socket.IO,
-// donde la revision es la autoridad de orden entre clientes concurrentes.
+// Se usa tanto para el reemplazo total via REST/import como base de
+// ApplyUmlOperation para operaciones granulares via Socket.IO, donde la
+// revision es la autoridad de orden entre clientes concurrentes.
 export class SaveUmlModel {
   constructor(
     private readonly umlModels: UmlModelRepository,
@@ -26,17 +27,27 @@ export class SaveUmlModel {
       throw new ForbiddenError('No tienes acceso a este proyecto');
     }
 
-    const current = await this.umlModels.findByProjectId(input.projectId);
-    const base = current ?? createUmlModel(input.projectId);
+    // Mismo control de concurrencia optimista que ApplyUmlOperation: esto
+    // reemplaza el grafo entero (import/guardado REST), asi que si otro
+    // cliente escribio una revision distinta mientras tanto, se relee y se
+    // reintenta con el mismo `input.classes/relationships` en vez de pisar
+    // silenciosamente el cambio ajeno.
+    for (let attempt = 0; attempt < MAX_CONCURRENCY_RETRIES; attempt++) {
+      const current = await this.umlModels.findByProjectId(input.projectId);
+      const base = current ?? createUmlModel(input.projectId);
 
-    const model: UmlModel = {
-      ...base,
-      classes: input.classes,
-      relationships: input.relationships,
-      revision: base.revision + 1,
-    };
+      const model: UmlModel = {
+        ...base,
+        classes: input.classes,
+        relationships: input.relationships,
+        revision: base.revision + 1,
+      };
 
-    await this.umlModels.save(model);
-    return model;
+      const saved = await this.umlModels.save(model, current ? current.revision : null);
+      if (saved) return model;
+      await concurrencyBackoff(attempt);
+    }
+
+    throw new ConflictError('No se pudo guardar el modelo: demasiadas ediciones simultaneas, intenta de nuevo');
   }
 }

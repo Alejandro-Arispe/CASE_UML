@@ -23,6 +23,7 @@ export interface GenSingleRef {
   columnName: string;
   referencedClassName: string;
   referencedPkJavaType: string;
+  referencedPkJavaImport?: string;
   annotation: RefAnnotation;
 }
 
@@ -32,6 +33,7 @@ export interface GenManyRef {
   fieldName: string;
   referencedClassName: string;
   referencedPkJavaType: string;
+  referencedPkJavaImport?: string;
   joinTableName: string;
   joinColumnName: string;
   inverseJoinColumnName: string;

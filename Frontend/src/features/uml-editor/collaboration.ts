@@ -179,6 +179,35 @@ export function deleteClass(classId: string) {
   emitOperation({ operation: 'DELETE_CLASS', classId });
 }
 
+// Duplica una clase con sus atributos (no las relaciones: una relacion
+// habla de dos clases especificas, copiarla junto a la clase duplicaria su
+// significado sin que el usuario lo haya pedido). Reutiliza createClass +
+// addAttribute uno por uno para que la copia pase por las mismas
+// operaciones normales (validables, colaborativas), en vez de un evento
+// especial "duplicate" que el resto del sistema tendria que conocer.
+export function duplicateClass(source: UmlClass, position: { x: number; y: number }) {
+  const classId = newId();
+  const op = { classId, name: `${source.name} copia`, position };
+  useUmlStore.getState().applyCreateClass(op);
+  emitOperation({ operation: 'CREATE_CLASS', ...op });
+
+  for (const attr of source.attributes) {
+    const attributeOp = {
+      classId,
+      attributeId: newId(),
+      name: attr.name,
+      type: attr.type,
+      isPrimaryKey: attr.isPrimaryKey,
+      nullable: attr.nullable,
+      defaultValue: attr.defaultValue,
+    };
+    useUmlStore.getState().applyAddAttribute(attributeOp);
+    emitOperation({ operation: 'ADD_ATTRIBUTE', ...attributeOp });
+  }
+
+  return classId;
+}
+
 export function addAttribute(classId: string) {
   const op = {
     classId,

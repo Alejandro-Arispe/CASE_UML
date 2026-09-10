@@ -60,16 +60,38 @@ export class PrismaUmlModelRepository implements UmlModelRepository {
   }
 
   // Reemplaza el grafo completo (clases, atributos, relaciones) en una
-  // transaccion. Es la estrategia mas simple y correcta para este alcance;
-  // la persistencia incremental por operacion (agregar un atributo, mover
-  // una clase) se agrega junto con el motor de edicion/colaboracion.
-  async save(model: UmlModel): Promise<void> {
-    await this.prisma.$transaction(async (tx) => {
-      await tx.umlModel.upsert({
-        where: { id: model.id },
-        create: { id: model.id, projectId: model.projectId, revision: model.revision },
-        update: { revision: model.revision },
-      });
+  // transaccion, condicionado a que la revision en base siga siendo la que
+  // el llamador leyo (`expectedRevision`): sin este chequeo, dos ediciones
+  // concurrentes que ambas parten de la misma revision pueden calcular
+  // "revision+1" por separado y la segunda en escribir pisa en silencio el
+  // cambio de la primera (lost update). Devuelve `false` sin escribir nada
+  // si alguien mas ya avanzo la revision entre la lectura y este intento.
+  async save(model: UmlModel, expectedRevision: number | null): Promise<boolean> {
+    return this.prisma.$transaction(async (tx) => {
+      if (expectedRevision === null) {
+        // El llamador cree que el modelo todavia no existe: crear es
+        // seguro porque `projectId` es @unique, asi que un intento
+        // concurrente de crear el mismo proyecto choca con esa restriccion
+        // en vez de pisar filas.
+        try {
+          await tx.umlModel.create({
+            data: { id: model.id, projectId: model.projectId, revision: model.revision },
+          });
+        } catch (err) {
+          if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+            return false;
+          }
+          throw err;
+        }
+      } else {
+        const result = await tx.umlModel.updateMany({
+          where: { id: model.id, revision: expectedRevision },
+          data: { revision: model.revision },
+        });
+        if (result.count === 0) {
+          return false;
+        }
+      }
 
       await tx.umlRelationship.deleteMany({ where: { modelId: model.id } });
       await tx.umlClass.deleteMany({ where: { modelId: model.id } });
@@ -109,6 +131,8 @@ export class PrismaUmlModelRepository implements UmlModelRepository {
           },
         });
       }
+
+      return true;
     });
   }
 }

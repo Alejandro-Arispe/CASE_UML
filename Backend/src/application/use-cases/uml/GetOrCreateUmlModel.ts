@@ -21,7 +21,11 @@ export class GetOrCreateUmlModel {
     }
 
     const empty = createUmlModel(input.projectId);
-    await this.umlModels.save(empty);
-    return empty;
+    const created = await this.umlModels.save(empty, null);
+    if (created) return empty;
+
+    // Otro cliente creo el modelo del proyecto en la misma ventana de
+    // tiempo (ambos vieron "no existe"): usar el suyo en vez de fallar.
+    return (await this.umlModels.findByProjectId(input.projectId)) ?? empty;
   }
 }

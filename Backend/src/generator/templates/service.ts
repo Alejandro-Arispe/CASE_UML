@@ -62,6 +62,8 @@ export function renderService(model: GenerationModel, klass: GenClass): string {
     .map((ref) => `import ${model.packageName}.repository.${ref.referencedClassName}Repository;`)
     .join('\n');
 
+  const pkImport = klass.pkAttribute.javaImport ? `import ${klass.pkAttribute.javaImport};\n` : '';
+
   return `${generatedFileHeader(`Servicio de "${klass.className}": CRUD basico (seccion 33).`)}
 package ${model.packageName}.service;
 
@@ -74,7 +76,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.util.List;
+${pkImport}import java.util.List;
 import java.util.stream.Collectors;
 
 @Service

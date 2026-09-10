@@ -19,24 +19,35 @@ export function ClassNode({ data, selected }: ClassNodeProps) {
 
   return (
     <div
-      className={`min-w-[200px] border bg-white text-xs text-slate-900 ${
+      className={`min-w-[200px] max-w-[320px] border bg-white text-xs text-slate-900 ${
         selected ? 'border-indigo-600 ring-2 ring-indigo-100' : 'border-slate-800'
       }`}
     >
       <Handle type="target" position={Position.Left} style={HANDLE_STYLE} />
       <Handle type="source" position={Position.Right} style={HANDLE_STYLE} />
 
-      <div className="border-b border-slate-800 px-3 py-1.5 text-center text-sm font-bold">{klass.name}</div>
+      <div
+        className="truncate border-b border-slate-800 px-3 py-1.5 text-center text-sm font-bold"
+        title={klass.name}
+      >
+        {klass.name}
+      </div>
 
       <ul className="min-h-[6px] border-b border-slate-800 py-1">
         {klass.attributes.map((attr) => (
-          <li key={attr.id} className="flex items-baseline gap-1 px-2 py-0.5 leading-tight">
-            <span className="text-slate-500">+</span>
-            <span className={attr.isPrimaryKey ? 'underline decoration-1 underline-offset-2' : ''}>
-              {attr.name}
+          <li
+            key={attr.id}
+            className="flex items-baseline gap-1 px-2 py-0.5 leading-tight"
+            title={`${attr.name}: ${attr.type}${attr.nullable ? ' [0..1]' : ''}`}
+          >
+            <span className="shrink-0 text-slate-500">+</span>
+            <span className="min-w-0 truncate">
+              <span className={attr.isPrimaryKey ? 'underline decoration-1 underline-offset-2' : ''}>
+                {attr.name}
+              </span>
+              <span className="text-slate-500">: {attr.type}</span>
+              {attr.nullable && <span className="text-slate-400"> [0..1]</span>}
             </span>
-            <span className="text-slate-500">: {attr.type}</span>
-            {attr.nullable && <span className="text-slate-400">[0..1]</span>}
           </li>
         ))}
       </ul>

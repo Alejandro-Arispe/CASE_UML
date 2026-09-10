@@ -1,3 +1,4 @@
+import { MarkerType } from '@xyflow/react';
 import type { Edge, Node } from '@xyflow/react';
 import type { UmlClass, UmlRelationship } from '../../types/uml';
 
@@ -21,5 +22,9 @@ export function relationshipToEdge(rel: UmlRelationship): Edge {
     target: rel.targetClassId,
     type: 'association',
     data: { relationship: rel },
+    // Flecha abierta simple en el extremo destino (notacion UML de
+    // asociacion, no de herencia): marca el sentido en que se creo la
+    // relacion, no un dato nuevo del modelo.
+    markerEnd: { type: MarkerType.Arrow, color: '#1e293b', width: 16, height: 16 },
   };
 }

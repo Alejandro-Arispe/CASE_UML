@@ -3,6 +3,8 @@ import { generatedFileHeader } from './javaUtil';
 
 // CRUD basico (seccion 33): sin filtros, paginacion, reportes ni permisos.
 export function renderController(model: GenerationModel, klass: GenClass): string {
+  const pkImport = klass.pkAttribute.javaImport ? `import ${klass.pkAttribute.javaImport};\n` : '';
+
   return `${generatedFileHeader(`Controller REST de "${klass.className}".`)}
 package ${model.packageName}.controller;
 
@@ -14,7 +16,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
+${pkImport}import java.util.List;
 
 @RestController
 @RequestMapping("/api/${klass.pluralSlug}")

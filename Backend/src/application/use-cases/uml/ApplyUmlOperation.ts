@@ -2,7 +2,8 @@ import { createEditHistory, createUmlModel, EditHistory, UmlModel } from '../../
 import { EditHistoryRepository } from '../../../ports/out/EditHistoryRepository';
 import { ProjectMemberRepository } from '../../../ports/out/ProjectMemberRepository';
 import { UmlModelRepository } from '../../../ports/out/UmlModelRepository';
-import { ForbiddenError } from '../../errors';
+import { concurrencyBackoff, MAX_CONCURRENCY_RETRIES } from '../../concurrencyRetry';
+import { ConflictError, ForbiddenError } from '../../errors';
 import { describeUmlOperation } from './describeUmlOperation';
 import { applyOperationToModel, OPERATION_EVENT_NAME, UmlOperationInput } from './umlOperations';
 
@@ -27,27 +28,41 @@ export class ApplyUmlOperation {
       throw new ForbiddenError('No tienes acceso a este proyecto');
     }
 
-    const before = (await this.umlModels.findByProjectId(input.projectId)) ?? createUmlModel(input.projectId);
+    // Control de concurrencia optimista: si otro cliente escribio una
+    // revision distinta entre que leemos `before` y que guardamos, `save`
+    // devuelve false sin escribir nada. En vez de pisar ese cambio (lost
+    // update) o descartar la operacion de este usuario, se relee el modelo
+    // fresco y se reaplica la MISMA operacion sobre la base actualizada.
+    for (let attempt = 0; attempt < MAX_CONCURRENCY_RETRIES; attempt++) {
+      const existing = await this.umlModels.findByProjectId(input.projectId);
+      const before = existing ?? createUmlModel(input.projectId);
 
-    const updated = applyOperationToModel(before, input.operation);
-    const model: UmlModel = { ...updated, revision: before.revision + 1 };
+      const updated = applyOperationToModel(before, input.operation);
+      const model: UmlModel = { ...updated, revision: before.revision + 1 };
 
-    await this.umlModels.save(model);
+      const saved = await this.umlModels.save(model, existing ? existing.revision : null);
+      if (!saved) {
+        await concurrencyBackoff(attempt);
+        continue;
+      }
 
-    // El historial se registra junto con la operacion (seccion 27): cada
-    // cambio aceptado queda trazado con quien, que y en que revision.
-    const { elementType, elementId, description } = describeUmlOperation(input.operation, before, model);
-    const historyEntry = createEditHistory({
-      projectId: input.projectId,
-      userId: input.userId,
-      operation: input.operation.operation,
-      elementType,
-      elementId,
-      description,
-      revision: model.revision,
-    });
-    await this.history.add(historyEntry);
+      // El historial se registra junto con la operacion (seccion 27): cada
+      // cambio aceptado queda trazado con quien, que y en que revision.
+      const { elementType, elementId, description } = describeUmlOperation(input.operation, before, model);
+      const historyEntry = createEditHistory({
+        projectId: input.projectId,
+        userId: input.userId,
+        operation: input.operation.operation,
+        elementType,
+        elementId,
+        description,
+        revision: model.revision,
+      });
+      await this.history.add(historyEntry);
 
-    return { model, eventName: OPERATION_EVENT_NAME[input.operation.operation], historyEntry };
+      return { model, eventName: OPERATION_EVENT_NAME[input.operation.operation], historyEntry };
+    }
+
+    throw new ConflictError('No se pudo aplicar el cambio: demasiadas ediciones simultaneas, intenta de nuevo');
   }
 }

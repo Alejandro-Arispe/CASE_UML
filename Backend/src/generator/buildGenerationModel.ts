@@ -63,6 +63,7 @@ export function buildGenerationModel(model: UmlModel, projectId: string): Genera
           columnName: `${target.tableName}_id`,
           referencedClassName: target.className,
           referencedPkJavaType: target.pkAttribute.javaType,
+          referencedPkJavaImport: target.pkAttribute.javaImport,
           annotation: 'OneToOne',
         });
         break;
@@ -75,6 +76,7 @@ export function buildGenerationModel(model: UmlModel, projectId: string): Genera
           columnName: `${source.tableName}_id`,
           referencedClassName: source.className,
           referencedPkJavaType: source.pkAttribute.javaType,
+          referencedPkJavaImport: source.pkAttribute.javaImport,
           annotation: 'ManyToOne',
         });
         break;
@@ -85,6 +87,7 @@ export function buildGenerationModel(model: UmlModel, projectId: string): Genera
           columnName: `${target.tableName}_id`,
           referencedClassName: target.className,
           referencedPkJavaType: target.pkAttribute.javaType,
+          referencedPkJavaImport: target.pkAttribute.javaImport,
           annotation: 'ManyToOne',
         });
         break;
@@ -94,6 +97,7 @@ export function buildGenerationModel(model: UmlModel, projectId: string): Genera
           fieldName: `${toCamelCase(target.className)}s`,
           referencedClassName: target.className,
           referencedPkJavaType: target.pkAttribute.javaType,
+          referencedPkJavaImport: target.pkAttribute.javaImport,
           joinTableName: `${source.tableName}_${target.tableName}`,
           joinColumnName: `${source.tableName}_id`,
           inverseJoinColumnName: `${target.tableName}_id`,

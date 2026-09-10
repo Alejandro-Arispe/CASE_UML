@@ -7,25 +7,60 @@ function normalize(name: string): string {
   return name.trim().toLowerCase();
 }
 
-function findClassId(model: UmlModel, className: string): string | null {
-  return model.classes.find((c) => normalize(c.name) === normalize(className))?.id ?? null;
+// Resultado de buscar un elemento por nombre: puede no existir, existir una
+// sola vez (el caso normal), o existir mas de una vez. Antes, un nombre
+// duplicado se resolvia en silencio a "el primero que aparece" -la IA podia
+// terminar editando la clase equivocada sin ningun aviso-; ahora ese caso se
+// distingue explicitamente para que el comando se omita con un motivo claro
+// en vez de adivinar.
+type Resolved = { id: string } | 'AMBIGUOUS' | 'NOT_FOUND';
+
+function resolveClass(model: UmlModel, className: string): Resolved {
+  const target = normalize(className);
+  const matches = model.classes.filter((c) => normalize(c.name) === target);
+  if (matches.length === 0) return 'NOT_FOUND';
+  if (matches.length > 1) return 'AMBIGUOUS';
+  return { id: matches[0].id };
 }
 
-function findAttributeId(model: UmlModel, classId: string, attributeName: string): string | null {
+function resolveAttribute(model: UmlModel, classId: string, attributeName: string): Resolved {
   const klass = model.classes.find((c) => c.id === classId);
-  return klass?.attributes.find((a) => normalize(a.name) === normalize(attributeName))?.id ?? null;
+  if (!klass) return 'NOT_FOUND';
+  const target = normalize(attributeName);
+  const matches = klass.attributes.filter((a) => normalize(a.name) === target);
+  if (matches.length === 0) return 'NOT_FOUND';
+  if (matches.length > 1) return 'AMBIGUOUS';
+  return { id: matches[0].id };
 }
 
-function findRelationshipId(model: UmlModel, sourceClassName: string, targetClassName: string): string | null {
-  const sourceId = findClassId(model, sourceClassName);
-  const targetId = findClassId(model, targetClassName);
-  if (!sourceId || !targetId) return null;
-  const rel = model.relationships.find(
+// Busca la relacion entre dos clases (en cualquier direccion, seccion 22:
+// la IA no siempre acierta el sentido origen/destino). Si hay mas de una
+// relacion entre el mismo par -por ejemplo una 1:N y una N:M creadas por
+// separado- no hay forma de saber cual quiso decir el comando (que solo
+// trae los nombres de clase, no un id de relacion), asi que se marca
+// ambigua en vez de tomar la primera.
+function resolveRelationship(model: UmlModel, sourceClassName: string, targetClassName: string): Resolved {
+  const source = resolveClass(model, sourceClassName);
+  const target = resolveClass(model, targetClassName);
+  if (source === 'NOT_FOUND' || target === 'NOT_FOUND') return 'NOT_FOUND';
+  if (source === 'AMBIGUOUS' || target === 'AMBIGUOUS') return 'AMBIGUOUS';
+
+  const matches = model.relationships.filter(
     (r) =>
-      (r.sourceClassId === sourceId && r.targetClassId === targetId) ||
-      (r.sourceClassId === targetId && r.targetClassId === sourceId),
+      (r.sourceClassId === source.id && r.targetClassId === target.id) ||
+      (r.sourceClassId === target.id && r.targetClassId === source.id),
   );
-  return rel?.id ?? null;
+  if (matches.length === 0) return 'NOT_FOUND';
+  if (matches.length > 1) return 'AMBIGUOUS';
+  return { id: matches[0].id };
+}
+
+function ambiguousClassReason(className: string): string {
+  return `Hay mas de una clase llamada "${className}": no se puede saber a cual te referis`;
+}
+
+function ambiguousRelationshipReason(sourceClassName: string, targetClassName: string): string {
+  return `Hay mas de una relacion entre "${sourceClassName}" y "${targetClassName}": no se puede saber a cual te referis`;
 }
 
 function nextPosition(index: number): { x: number; y: number } {
@@ -43,8 +78,9 @@ export interface ResolvedAiCommands {
 // en UUID) simulando cada paso sobre una copia del modelo con la misma
 // funcion pura del motor de edicion (seccion 22), para que un comando pueda
 // referirse a una clase/atributo que un comando anterior de la MISMA
-// respuesta acaba de crear. Un comando que no puede resolverse se omite
-// (no aborta el resto del lote) y se informa en `skipped`.
+// respuesta acaba de crear. Un comando que no puede resolverse -no existe o
+// es ambiguo- se omite (no aborta el resto del lote) y se informa en
+// `skipped`.
 export function resolveAiCommands(commands: AiCommand[], initialModel: UmlModel): ResolvedAiCommands {
   let simulated = initialModel;
   const operations: UmlOperationInput[] = [];
@@ -57,7 +93,8 @@ export function resolveAiCommands(commands: AiCommand[], initialModel: UmlModel)
 
     switch (cmd.action) {
       case 'CREATE_CLASS': {
-        if (findClassId(simulated, cmd.className)) {
+        const existing = resolveClass(simulated, cmd.className);
+        if (existing !== 'NOT_FOUND') {
           reason = `La clase "${cmd.className}" ya existe`;
           break;
         }
@@ -71,28 +108,34 @@ export function resolveAiCommands(commands: AiCommand[], initialModel: UmlModel)
       }
 
       case 'RENAME_CLASS': {
-        const classId = findClassId(simulated, cmd.className);
-        if (!classId) reason = `Clase inexistente: ${cmd.className}`;
-        else operation = { operation: 'RENAME_CLASS', classId, name: cmd.newName };
+        const resolved = resolveClass(simulated, cmd.className);
+        if (resolved === 'NOT_FOUND') reason = `Clase inexistente: ${cmd.className}`;
+        else if (resolved === 'AMBIGUOUS') reason = ambiguousClassReason(cmd.className);
+        else operation = { operation: 'RENAME_CLASS', classId: resolved.id, name: cmd.newName };
         break;
       }
 
       case 'DELETE_CLASS': {
-        const classId = findClassId(simulated, cmd.className);
-        if (!classId) reason = `Clase inexistente: ${cmd.className}`;
-        else operation = { operation: 'DELETE_CLASS', classId };
+        const resolved = resolveClass(simulated, cmd.className);
+        if (resolved === 'NOT_FOUND') reason = `Clase inexistente: ${cmd.className}`;
+        else if (resolved === 'AMBIGUOUS') reason = ambiguousClassReason(cmd.className);
+        else operation = { operation: 'DELETE_CLASS', classId: resolved.id };
         break;
       }
 
       case 'ADD_ATTRIBUTE': {
-        const classId = findClassId(simulated, cmd.className);
-        if (!classId) {
+        const resolved = resolveClass(simulated, cmd.className);
+        if (resolved === 'NOT_FOUND') {
           reason = `Clase inexistente: ${cmd.className}`;
+          break;
+        }
+        if (resolved === 'AMBIGUOUS') {
+          reason = ambiguousClassReason(cmd.className);
           break;
         }
         operation = {
           operation: 'ADD_ATTRIBUTE',
-          classId,
+          classId: resolved.id,
           attributeId: randomUUID(),
           name: cmd.attributeName,
           type: cmd.dataType,
@@ -104,16 +147,28 @@ export function resolveAiCommands(commands: AiCommand[], initialModel: UmlModel)
       }
 
       case 'UPDATE_ATTRIBUTE': {
-        const classId = findClassId(simulated, cmd.className);
-        const attributeId = classId ? findAttributeId(simulated, classId, cmd.attributeName) : null;
-        if (!classId || !attributeId) {
+        const resolvedClass = resolveClass(simulated, cmd.className);
+        if (resolvedClass === 'NOT_FOUND') {
+          reason = `Clase inexistente: ${cmd.className}`;
+          break;
+        }
+        if (resolvedClass === 'AMBIGUOUS') {
+          reason = ambiguousClassReason(cmd.className);
+          break;
+        }
+        const resolvedAttribute = resolveAttribute(simulated, resolvedClass.id, cmd.attributeName);
+        if (resolvedAttribute === 'NOT_FOUND') {
           reason = `Atributo inexistente: ${cmd.className}.${cmd.attributeName}`;
+          break;
+        }
+        if (resolvedAttribute === 'AMBIGUOUS') {
+          reason = `Hay mas de un atributo "${cmd.attributeName}" en "${cmd.className}": no se puede saber a cual te referis`;
           break;
         }
         operation = {
           operation: 'UPDATE_ATTRIBUTE',
-          classId,
-          attributeId,
+          classId: resolvedClass.id,
+          attributeId: resolvedAttribute.id,
           name: cmd.newAttributeName,
           type: cmd.dataType,
           isPrimaryKey: cmd.isPrimaryKey,
@@ -123,28 +178,44 @@ export function resolveAiCommands(commands: AiCommand[], initialModel: UmlModel)
       }
 
       case 'REMOVE_ATTRIBUTE': {
-        const classId = findClassId(simulated, cmd.className);
-        const attributeId = classId ? findAttributeId(simulated, classId, cmd.attributeName) : null;
-        if (!classId || !attributeId) {
+        const resolvedClass = resolveClass(simulated, cmd.className);
+        if (resolvedClass === 'NOT_FOUND') {
+          reason = `Clase inexistente: ${cmd.className}`;
+          break;
+        }
+        if (resolvedClass === 'AMBIGUOUS') {
+          reason = ambiguousClassReason(cmd.className);
+          break;
+        }
+        const resolvedAttribute = resolveAttribute(simulated, resolvedClass.id, cmd.attributeName);
+        if (resolvedAttribute === 'NOT_FOUND') {
           reason = `Atributo inexistente: ${cmd.className}.${cmd.attributeName}`;
           break;
         }
-        operation = { operation: 'REMOVE_ATTRIBUTE', classId, attributeId };
+        if (resolvedAttribute === 'AMBIGUOUS') {
+          reason = `Hay mas de un atributo "${cmd.attributeName}" en "${cmd.className}": no se puede saber a cual te referis`;
+          break;
+        }
+        operation = { operation: 'REMOVE_ATTRIBUTE', classId: resolvedClass.id, attributeId: resolvedAttribute.id };
         break;
       }
 
       case 'CREATE_RELATIONSHIP': {
-        const sourceClassId = findClassId(simulated, cmd.sourceClassName);
-        const targetClassId = findClassId(simulated, cmd.targetClassName);
-        if (!sourceClassId || !targetClassId) {
+        const resolvedSource = resolveClass(simulated, cmd.sourceClassName);
+        const resolvedTarget = resolveClass(simulated, cmd.targetClassName);
+        if (resolvedSource === 'NOT_FOUND' || resolvedTarget === 'NOT_FOUND') {
           reason = `Relacion con clase inexistente: ${cmd.sourceClassName} - ${cmd.targetClassName}`;
+          break;
+        }
+        if (resolvedSource === 'AMBIGUOUS' || resolvedTarget === 'AMBIGUOUS') {
+          reason = ambiguousClassReason(resolvedSource === 'AMBIGUOUS' ? cmd.sourceClassName : cmd.targetClassName);
           break;
         }
         operation = {
           operation: 'CREATE_RELATIONSHIP',
           relationshipId: randomUUID(),
-          sourceClassId,
-          targetClassId,
+          sourceClassId: resolvedSource.id,
+          targetClassId: resolvedTarget.id,
           type: cmd.relationshipType,
           sourceMultiplicity: cmd.sourceMultiplicity,
           targetMultiplicity: cmd.targetMultiplicity,
@@ -153,19 +224,21 @@ export function resolveAiCommands(commands: AiCommand[], initialModel: UmlModel)
       }
 
       case 'UPDATE_RELATIONSHIP': {
-        const relationshipId = findRelationshipId(simulated, cmd.sourceClassName, cmd.targetClassName);
-        if (!relationshipId) reason = `Relacion inexistente: ${cmd.sourceClassName} - ${cmd.targetClassName}`;
-        else operation = { operation: 'UPDATE_RELATIONSHIP', relationshipId, type: cmd.relationshipType };
+        const resolved = resolveRelationship(simulated, cmd.sourceClassName, cmd.targetClassName);
+        if (resolved === 'NOT_FOUND') reason = `Relacion inexistente: ${cmd.sourceClassName} - ${cmd.targetClassName}`;
+        else if (resolved === 'AMBIGUOUS') reason = ambiguousRelationshipReason(cmd.sourceClassName, cmd.targetClassName);
+        else operation = { operation: 'UPDATE_RELATIONSHIP', relationshipId: resolved.id, type: cmd.relationshipType };
         break;
       }
 
       case 'SET_MULTIPLICITY': {
-        const relationshipId = findRelationshipId(simulated, cmd.sourceClassName, cmd.targetClassName);
-        if (!relationshipId) reason = `Relacion inexistente: ${cmd.sourceClassName} - ${cmd.targetClassName}`;
+        const resolved = resolveRelationship(simulated, cmd.sourceClassName, cmd.targetClassName);
+        if (resolved === 'NOT_FOUND') reason = `Relacion inexistente: ${cmd.sourceClassName} - ${cmd.targetClassName}`;
+        else if (resolved === 'AMBIGUOUS') reason = ambiguousRelationshipReason(cmd.sourceClassName, cmd.targetClassName);
         else
           operation = {
             operation: 'SET_MULTIPLICITY',
-            relationshipId,
+            relationshipId: resolved.id,
             sourceMultiplicity: cmd.sourceMultiplicity,
             targetMultiplicity: cmd.targetMultiplicity,
           };
@@ -173,9 +246,10 @@ export function resolveAiCommands(commands: AiCommand[], initialModel: UmlModel)
       }
 
       case 'DELETE_RELATIONSHIP': {
-        const relationshipId = findRelationshipId(simulated, cmd.sourceClassName, cmd.targetClassName);
-        if (!relationshipId) reason = `Relacion inexistente: ${cmd.sourceClassName} - ${cmd.targetClassName}`;
-        else operation = { operation: 'DELETE_RELATIONSHIP', relationshipId };
+        const resolved = resolveRelationship(simulated, cmd.sourceClassName, cmd.targetClassName);
+        if (resolved === 'NOT_FOUND') reason = `Relacion inexistente: ${cmd.sourceClassName} - ${cmd.targetClassName}`;
+        else if (resolved === 'AMBIGUOUS') reason = ambiguousRelationshipReason(cmd.sourceClassName, cmd.targetClassName);
+        else operation = { operation: 'DELETE_RELATIONSHIP', relationshipId: resolved.id };
         break;
       }
     }

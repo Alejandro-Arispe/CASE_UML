@@ -1,4 +1,5 @@
 import { UML_DATA_TYPES, UmlModel } from '../entities';
+import { toCamelCase, toPascalCase } from '../naming';
 import { ValidationIssue, ValidationResult } from './ValidationIssue';
 
 const VALID_MULTIPLICITIES = ['1', 'N'];
@@ -30,13 +31,18 @@ export function validateUmlModel(model: UmlModel): ValidationResult {
     if (!name) {
       issues.push({ code: 'CLASS_WITHOUT_NAME', elementType: 'CLASS', elementId: klass.id, message: 'La clase no tiene nombre' });
     } else {
-      const key = name.toLowerCase();
+      // La clave de duplicado es el identificador Java que el generador
+      // realmente va a producir (toPascalCase), no el texto tal cual lo
+      // escribio el usuario: "Cliente_1" y "cliente-1" son strings
+      // distintos pero generan la misma clase "Cliente1", y esa colision
+      // solo se detecta si se compara con la misma normalizacion.
+      const key = toPascalCase(name);
       if (seenClassNames.has(key)) {
         issues.push({
           code: 'DUPLICATE_CLASS_NAME',
           elementType: 'CLASS',
           elementId: klass.id,
-          message: `Nombre de clase duplicado: "${name}"`,
+          message: `Nombre de clase duplicado: "${name}" genera el mismo identificador que otra clase ("${key}")`,
         });
       } else {
         seenClassNames.set(key, klass.id);
@@ -54,16 +60,35 @@ export function validateUmlModel(model: UmlModel): ValidationResult {
       });
     }
 
+    // Nombres de atributo duplicados DENTRO de esta clase (reseteado por
+    // clase, a diferencia de seenClassNames que es global al modelo): el
+    // generador mapea el nombre a un fieldName con toCamelCase, asi que
+    // "Email" y "email" en la misma clase producen el mismo campo Java.
+    const seenAttributeNames = new Map<string, string>();
+
     for (const attr of klass.attributes) {
       checkDuplicateId(attr.id, 'ATTRIBUTE', 'atributo');
 
-      if (!attr.name.trim()) {
+      const attrName = attr.name.trim();
+      if (!attrName) {
         issues.push({
           code: 'ATTRIBUTE_WITHOUT_NAME',
           elementType: 'ATTRIBUTE',
           elementId: attr.id,
           message: `Atributo sin nombre en "${name || klass.id}"`,
         });
+      } else {
+        const attrKey = toCamelCase(attrName);
+        if (seenAttributeNames.has(attrKey)) {
+          issues.push({
+            code: 'DUPLICATE_ATTRIBUTE_NAME',
+            elementType: 'ATTRIBUTE',
+            elementId: attr.id,
+            message: `Atributo duplicado en "${name || klass.id}": "${attrName}" genera el mismo campo que otro atributo ("${attrKey}")`,
+          });
+        } else {
+          seenAttributeNames.set(attrKey, attr.id);
+        }
       }
 
       if (!UML_DATA_TYPES.includes(attr.type)) {
@@ -88,6 +113,18 @@ export function validateUmlModel(model: UmlModel): ValidationResult {
         elementType: 'RELATIONSHIP',
         elementId: rel.id,
         message: 'La relacion referencia una clase inexistente',
+      });
+    }
+
+    // M:N de una clase consigo misma: el generador arma un @JoinTable cuyo
+    // joinColumnName e inverseJoinColumnName salen identicos (mismo
+    // tableName de origen y destino), lo que Hibernate rechaza al arrancar.
+    if (rel.type === 'MANY_TO_MANY' && rel.sourceClassId === rel.targetClassId) {
+      issues.push({
+        code: 'RELATIONSHIP_SELF_REFERENCE_MANY_TO_MANY',
+        elementType: 'RELATIONSHIP',
+        elementId: rel.id,
+        message: 'Una relacion Muchos a Muchos no puede ser de una clase consigo misma',
       });
     }
 

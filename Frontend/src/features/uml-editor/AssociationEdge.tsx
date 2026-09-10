@@ -1,4 +1,4 @@
-import { BaseEdge, EdgeLabelRenderer, getStraightPath, Position } from '@xyflow/react';
+import { BaseEdge, EdgeLabelRenderer, getSmoothStepPath, Position } from '@xyflow/react';
 import type { EdgeProps } from '@xyflow/react';
 import type { UmlRelationship } from '../../types/uml';
 
@@ -24,10 +24,12 @@ function offsetFromBorder(x: number, y: number, position: Position | undefined) 
   }
 }
 
-// Asociacion UML 2.5: linea recta simple con la multiplicidad de cada
-// extremo pegada a la clase correspondiente (no una etiqueta al medio),
-// como se ve en Enterprise Architect. Las 4 relaciones que soporta el
-// modelo (1:1, 1:N, N:1, N:M) se dibujan todas como asociacion simple.
+// Asociacion UML 2.5: ruteo ortogonal (escalones horizontales/verticales,
+// como Enterprise Architect/Visual Paradigm) en vez de una diagonal cruda,
+// con flecha abierta en el destino y la multiplicidad de cada extremo
+// pegada a la clase correspondiente (no una etiqueta al medio). Las 4
+// relaciones que soporta el modelo (1:1, 1:N, N:1, N:M) se dibujan todas
+// como asociacion simple: solo cambia la multiplicidad en cada punta.
 export function AssociationEdge({
   sourceX,
   sourceY,
@@ -35,18 +37,31 @@ export function AssociationEdge({
   targetY,
   sourcePosition,
   targetPosition,
+  markerEnd,
   data,
   selected,
 }: EdgeProps) {
   const relationship = (data as { relationship?: UmlRelationship } | undefined)?.relationship;
-  const [path] = getStraightPath({ sourceX, sourceY, targetX, targetY });
+  const [path] = getSmoothStepPath({
+    sourceX,
+    sourceY,
+    sourcePosition,
+    targetX,
+    targetY,
+    targetPosition,
+    borderRadius: 6,
+  });
 
   const nearSource = offsetFromBorder(sourceX, sourceY, sourcePosition);
   const nearTarget = offsetFromBorder(targetX, targetY, targetPosition);
 
   return (
     <>
-      <BaseEdge path={path} style={{ stroke: selected ? '#4f46e5' : '#1e293b', strokeWidth: selected ? 2 : 1 }} />
+      <BaseEdge
+        path={path}
+        markerEnd={markerEnd}
+        style={{ stroke: selected ? '#4f46e5' : '#1e293b', strokeWidth: selected ? 2 : 1.25 }}
+      />
       {relationship && (
         <EdgeLabelRenderer>
           <div
