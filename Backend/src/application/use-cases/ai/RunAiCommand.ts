@@ -2,6 +2,7 @@ import { createUmlModel, EditHistory, UmlModel } from '../../../domain/entities'
 import { AiModelClient } from '../../../ports/out/AiModelClient';
 import { ProjectMemberRepository } from '../../../ports/out/ProjectMemberRepository';
 import { UmlModelRepository } from '../../../ports/out/UmlModelRepository';
+import { DomainError } from '../../../domain/errors/DomainError';
 import { ForbiddenError } from '../../errors';
 import { ApplyUmlOperation } from '../uml/ApplyUmlOperation';
 import { UmlOperationInput } from '../uml/umlOperations';
@@ -32,17 +33,31 @@ export class RunAiCommand {
   async execute(input: {
     projectId: string;
     userId: string;
-    prompt: string;
+    prompt?: string;
+    image?: { data: string; mimeType: string };
   }): Promise<{ applied: AppliedAiOperation[]; skipped: { command: AiCommand; reason: string }[] }> {
     const membership = await this.members.findByProjectAndUser(input.projectId, input.userId);
     if (!membership) {
       throw new ForbiddenError('No tienes acceso a este proyecto');
     }
+    if (!input.prompt && !input.image) {
+      throw new DomainError('Falta el pedido (texto o imagen)');
+    }
 
     const currentModel = (await this.umlModels.findByProjectId(input.projectId)) ?? createUmlModel(input.projectId);
     const modelSummary = buildModelSummary(currentModel);
 
-    const commands = await this.aiModelClient.generateCommands({ prompt: input.prompt, modelSummary });
+    // Mismo pipeline de resolucion/aplicacion sin importar si el origen del
+    // comando fue un prompt de texto o una foto de un diagrama: ambos
+    // producen la misma forma (AiCommand[]).
+    const commands = input.image
+      ? await this.aiModelClient.generateCommandsFromImage({
+          imageBase64: input.image.data,
+          mimeType: input.image.mimeType,
+          modelSummary,
+        })
+      : await this.aiModelClient.generateCommands({ prompt: input.prompt!, modelSummary });
+
     const { operations, skipped } = resolveAiCommands(commands, currentModel);
 
     const applied: AppliedAiOperation[] = [];

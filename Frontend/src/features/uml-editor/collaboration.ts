@@ -286,6 +286,18 @@ export function sendAiPrompt(prompt: string): Promise<AiCommandResult> {
   });
 }
 
+// Foto de un diagrama (pizarra, papel, otra herramienta): mismo evento y
+// mismo resultado que un prompt de texto, la IA en el backend reconoce el
+// contenido de la imagen y produce los mismos comandos estructurados.
+export function sendAiImage(imageBase64: string, mimeType: string): Promise<AiCommandResult> {
+  return new Promise((resolve) => {
+    const socket = getSocket();
+    socket.emit('ai_command', { image: { data: imageBase64, mimeType } }, (ack?: AiCommandResult) => {
+      resolve(ack ?? { ok: false, error: 'Sin respuesta del servidor' });
+    });
+  });
+}
+
 export interface ImportModelResult {
   ok: boolean;
   error?: string;

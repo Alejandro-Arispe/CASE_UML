@@ -27,7 +27,6 @@ export function GeneratorPanel({ projectId, onClose }: { projectId: string; onCl
   const [result, setResult] = useState<GeneratedBackendDownload | null>(null);
   const [issues, setIssues] = useState<ValidationIssue[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [confirmed, setConfirmed] = useState(false);
 
   async function handleGenerate() {
     setLoading(true);
@@ -50,47 +49,21 @@ export function GeneratorPanel({ projectId, onClose }: { projectId: string; onCl
   }
 
   return (
-    <Modal
-      title="Generar backend Spring Boot"
-      onClose={onClose}
-      width="max-w-lg"
-      footer={
-        !confirmed && !result ? (
-          <>
-            <Button onClick={onClose}>Cancelar</Button>
-            <Button variant="primary" onClick={() => setConfirmed(true)}>
-              Si, generar
-            </Button>
-          </>
-        ) : (
-          <Button onClick={onClose}>Cerrar</Button>
-        )
-      }
-    >
-      {!confirmed && !result && (
-        <p className="text-slate-600">
-          Esto genera un backend Spring Boot a partir del modelo UML actual y lo descarga como .zip, listo para
-          descomprimir y ejecutar aparte. No queda nada guardado en el servidor. ¿Continuar?
-        </p>
-      )}
-
-      {confirmed && !result && (
+    <Modal title="Generar backend" onClose={onClose} width="max-w-lg" footer={<Button onClick={onClose}>Cerrar</Button>}>
+      {!result && (
         <div className="space-y-3">
           <Button variant="primary" onClick={handleGenerate} disabled={loading} className="w-full">
-            {loading ? 'Generando...' : 'Generar y descargar'}
+            {loading ? 'Generando...' : 'Generar y descargar .zip'}
           </Button>
 
           {issues && (
-            <div>
-              <p className="text-sm text-slate-600">El modelo no es valido. Resolve estos problemas y volve a intentar:</p>
-              <ul className="mt-2 space-y-1">
-                {issues.map((issue, i) => (
-                  <li key={i} className="rounded-md border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700">
-                    [{issue.elementType}] {issue.message}
-                  </li>
-                ))}
-              </ul>
-            </div>
+            <ul className="space-y-1">
+              {issues.map((issue, i) => (
+                <li key={i} className="rounded-md border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700">
+                  [{issue.elementType}] {issue.message}
+                </li>
+              ))}
+            </ul>
           )}
 
           {error && <p className="text-sm text-red-600">{error}</p>}
@@ -99,8 +72,8 @@ export function GeneratorPanel({ projectId, onClose }: { projectId: string; onCl
 
       {result && (
         <div className="space-y-4">
-          <div className="flex items-center gap-2 rounded-md bg-emerald-50 px-3 py-2.5 text-sm font-medium text-emerald-700">
-            Backend generado: la descarga de {result.filename} deberia haber empezado.
+          <div className="rounded-md bg-emerald-50 px-3 py-2.5 text-sm font-medium text-emerald-700">
+            ✓ {result.filename}
           </div>
 
           <dl className="grid grid-cols-3 gap-x-2 gap-y-2 text-sm">
@@ -114,17 +87,14 @@ export function GeneratorPanel({ projectId, onClose }: { projectId: string; onCl
             <dd className="col-span-2 text-slate-700">{result.port}</dd>
           </dl>
 
-          <div>
-            <p className="mb-1 text-sm text-slate-600">Para ejecutarlo:</p>
-            <pre className="overflow-x-auto rounded-md bg-slate-900 px-3 py-2.5 text-xs text-slate-100">
-              {`unzip ${result.filename}\ncd ${result.filename.replace(/\.zip$/, '')}\nmvn spring-boot:run`}
-            </pre>
-          </div>
+          <pre className="overflow-x-auto rounded-md bg-slate-900 px-3 py-2.5 text-xs text-slate-100">
+            {`unzip ${result.filename}\ncd ${result.filename.replace(/\.zip$/, '')}\nmvn spring-boot:run`}
+          </pre>
 
           <p className="text-sm text-slate-600">
-            Luego abrir Swagger en{' '}
+            Swagger:{' '}
             <code className="rounded bg-slate-100 px-1.5 py-0.5 text-xs">
-              http://localhost:{result.port}/swagger-ui.html
+              localhost:{result.port}/swagger-ui.html
             </code>
           </p>
 

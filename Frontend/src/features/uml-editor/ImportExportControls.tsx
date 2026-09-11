@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
 import { useUmlStore } from '../../store/umlStore';
 import * as collaboration from './collaboration';
+import { exportToXmi, parseXmiToModel } from './xmiFormat';
 import { Button } from '../../components/ui/Button';
 
 const ACCENT_MARKS_REGEX = new RegExp('[' + String.fromCharCode(0x0300) + '-' + String.fromCharCode(0x036f) + ']', 'g');
@@ -17,9 +18,10 @@ function slugify(name: string): string {
   );
 }
 
-// Exportar/importar el modelo UML como JSON. Reutiliza exactamente la misma
-// forma que usa el resto del sistema (classes/relationships), asi un
-// archivo exportado desde un proyecto se puede importar en otro.
+// Exportar/importar el modelo UML como XMI (seccion "Import/Export"): es el
+// formato estandar de intercambio UML entre herramientas CASE, no un volcado
+// JSON propio. La conversion XMI <-> classes/relationships vive en
+// xmiFormat.ts; aca solo se arma/lee el archivo.
 export function ImportExportControls({ projectName }: { projectName: string }) {
   const classes = useUmlStore((state) => state.classes);
   const relationships = useUmlStore((state) => state.relationships);
@@ -32,12 +34,12 @@ export function ImportExportControls({ projectName }: { projectName: string }) {
   }
 
   function handleExport() {
-    const data = { classes, relationships };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const xmi = exportToXmi(classes, relationships, projectName);
+    const blob = new Blob([xmi], { type: 'application/xml' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `${slugify(projectName)}.json`;
+    link.download = `${slugify(projectName)}.xmi`;
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -50,10 +52,7 @@ export function ImportExportControls({ projectName }: { projectName: string }) {
     if (!file) return;
 
     try {
-      const parsed = JSON.parse(await file.text());
-      if (!Array.isArray(parsed.classes) || !Array.isArray(parsed.relationships)) {
-        throw new Error('El archivo debe tener "classes" y "relationships".');
-      }
+      const parsed = parseXmiToModel(await file.text());
       const result = await collaboration.importModel(parsed.classes, parsed.relationships);
       if (result.ok) {
         showStatus('ok', 'Modelo importado correctamente.');
@@ -61,22 +60,22 @@ export function ImportExportControls({ projectName }: { projectName: string }) {
         showStatus('error', result.error ?? 'No se pudo importar el modelo.');
       }
     } catch (err) {
-      showStatus('error', err instanceof Error ? err.message : 'El archivo no es un JSON valido.');
+      showStatus('error', err instanceof Error ? err.message : 'El archivo no es un XMI valido.');
     }
   }
 
   return (
     <div className="flex items-center gap-2">
-      <Button size="sm" onClick={handleExport}>
+      <Button size="sm" onClick={handleExport} title="Exportar el modelo como XMI">
         Exportar
       </Button>
-      <Button size="sm" onClick={() => fileInputRef.current?.click()}>
+      <Button size="sm" onClick={() => fileInputRef.current?.click()} title="Importar un modelo desde XMI">
         Importar
       </Button>
       <input
         ref={fileInputRef}
         type="file"
-        accept="application/json"
+        accept=".xmi,application/xml,text/xml"
         className="hidden"
         onChange={handleImportFile}
       />

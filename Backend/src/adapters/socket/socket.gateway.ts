@@ -64,6 +64,9 @@ export function createSocketServer(
 ) {
   const io = new SocketIOServer(httpServer, {
     cors: { origin: env.corsOrigin, credentials: true },
+    // Default de Socket.IO es 1MB: una foto de un diagrama de pizarra
+    // (aunque se comprime en el cliente antes de enviarla) puede superarlo.
+    maxHttpBufferSize: 8 * 1024 * 1024,
   });
 
   const presence = new PresenceTracker();
@@ -161,8 +164,14 @@ export function createSocketServer(
           return;
         }
 
-        const prompt = (rawPayload as { prompt?: unknown })?.prompt;
-        if (typeof prompt !== 'string' || !prompt.trim()) {
+        const payload = rawPayload as { prompt?: unknown; image?: { data?: unknown; mimeType?: unknown } };
+        const prompt = typeof payload?.prompt === 'string' && payload.prompt.trim() ? payload.prompt : undefined;
+        const image =
+          typeof payload?.image?.data === 'string' && typeof payload.image.mimeType === 'string'
+            ? { data: payload.image.data, mimeType: payload.image.mimeType }
+            : undefined;
+
+        if (!prompt && !image) {
           ack?.({ ok: false, error: 'El pedido no puede estar vacio' });
           return;
         }
@@ -172,6 +181,7 @@ export function createSocketServer(
             projectId: data.projectId,
             userId: data.userId,
             prompt,
+            image,
           });
 
           const room = projectRoom(data.projectId);

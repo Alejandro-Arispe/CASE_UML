@@ -1,18 +1,35 @@
-import { useState } from 'react';
-import type { FormEvent } from 'react';
+import { useRef, useState } from 'react';
+import type { ChangeEvent, FormEvent } from 'react';
 import * as collaboration from './collaboration';
+import { resizeImageFile } from './imageUpload';
 import { Button } from '../../components/ui/Button';
 import { Textarea } from '../../components/ui/Input';
 
 // Panel de IA (secciones 28-30): el usuario describe en lenguaje natural
-// que quiere y la IA produce comandos estructurados que el backend valida
-// y aplica con el mismo motor de operaciones del editor manual. Aca no se
-// toca el modelo directamente: solo se manda el prompt y se espera el
-// resultado (los cambios llegan como eventos normales de colaboracion).
+// que quiere, o sube una foto de un diagrama (pizarra, papel, otra
+// herramienta), y la IA produce comandos estructurados que el backend
+// valida y aplica con el mismo motor de operaciones del editor manual. Aca
+// no se toca el modelo directamente: solo se manda el pedido y se espera
+// el resultado (los cambios llegan como eventos normales de colaboracion).
 export function AiPanel({ onClose }: { onClose: () => void }) {
   const [prompt, setPrompt] = useState('');
   const [loading, setLoading] = useState(false);
   const [feedback, setFeedback] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  function applyResult(result: collaboration.AiCommandResult) {
+    if (!result.ok) {
+      setFeedback({ tone: 'error', text: result.error ?? 'No se pudo procesar el pedido' });
+      return;
+    }
+    const skippedCount = result.skipped?.length ?? 0;
+    setFeedback({
+      tone: 'ok',
+      text:
+        `Se aplicaron ${result.applied ?? 0} cambios.` +
+        (skippedCount > 0 ? ` ${skippedCount} comando(s) omitidos: ${result.skipped!.map((s) => s.reason).join('; ')}` : ''),
+    });
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -22,20 +39,26 @@ export function AiPanel({ onClose }: { onClose: () => void }) {
     setFeedback(null);
     const result = await collaboration.sendAiPrompt(prompt.trim());
     setLoading(false);
+    applyResult(result);
+    if (result.ok) setPrompt('');
+  }
 
-    if (!result.ok) {
-      setFeedback({ tone: 'error', text: result.error ?? 'No se pudo procesar el pedido' });
-      return;
+  async function handleImageChange(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || loading) return;
+
+    setLoading(true);
+    setFeedback(null);
+    try {
+      const { base64, mimeType } = await resizeImageFile(file);
+      const result = await collaboration.sendAiImage(base64, mimeType);
+      applyResult(result);
+    } catch (err) {
+      setFeedback({ tone: 'error', text: err instanceof Error ? err.message : 'No se pudo leer la imagen' });
+    } finally {
+      setLoading(false);
     }
-
-    const skippedCount = result.skipped?.length ?? 0;
-    setFeedback({
-      tone: 'ok',
-      text:
-        `Se aplicaron ${result.applied ?? 0} cambios.` +
-        (skippedCount > 0 ? ` ${skippedCount} comando(s) omitidos: ${result.skipped!.map((s) => s.reason).join('; ')}` : ''),
-    });
-    setPrompt('');
   }
 
   return (
@@ -57,9 +80,26 @@ export function AiPanel({ onClose }: { onClose: () => void }) {
           rows={4}
           className="w-full"
         />
-        <Button type="submit" variant="primary" disabled={loading} className="w-full">
-          {loading ? 'Pensando...' : 'Enviar'}
-        </Button>
+        <div className="flex gap-2">
+          <Button type="submit" variant="primary" disabled={loading} className="flex-1">
+            {loading ? 'Pensando...' : 'Enviar'}
+          </Button>
+          <Button
+            type="button"
+            disabled={loading}
+            onClick={() => fileInputRef.current?.click()}
+            title="Subir una foto de un diagrama dibujado a mano o en pizarra"
+          >
+            Foto
+          </Button>
+        </div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={handleImageChange}
+        />
       </form>
 
       {feedback && (
