@@ -1,58 +1,83 @@
+import { memo } from 'react';
 import { Handle, Position } from '@xyflow/react';
 import type { UmlClass } from '../../types/uml';
+import { IconKey } from '../../components/ui/icons';
 
-interface ClassNodeProps {
-  data: { klass: UmlClass };
-  selected?: boolean;
+export interface ClassNodeData extends Record<string, unknown> {
+  klass: UmlClass;
+  // Estereotipo UML mostrado sobre el nombre (ej. «clase asociacion»).
+  stereotype?: string;
 }
 
-const HANDLE_STYLE = { width: 8, height: 8, background: '#1e293b', border: '1px solid white' };
+// Puntos para arrastrar una relacion nueva, en los 4 lados (visibles al
+// pasar el mouse). Con ConnectionMode.Loose cualquiera sirve de origen o
+// destino; la linea en si se dibuja "flotante" hacia el borde mas cercano
+// (ver UmlEdge), asi que el lado elegido no condiciona el dibujo.
+const HANDLE_CLASS =
+  '!h-2.5 !w-2.5 !border-2 !border-white !bg-indigo-600 !shadow-sm opacity-0 transition-opacity group-hover:opacity-100';
+const SIDES = [
+  { id: 'top', position: Position.Top },
+  { id: 'right', position: Position.Right },
+  { id: 'bottom', position: Position.Bottom },
+  { id: 'left', position: Position.Left },
+];
 
-// Caja de clase UML 2.5 de 3 compartimentos (nombre / atributos /
-// operaciones), con el mismo aspecto que usa por defecto Enterprise
-// Architect: bordes rectos y finos, sin sombra, "+ nombre : Tipo" con la
-// clave primaria subrayada y la multiplicidad [0..1] para lo opcional.
-// El compartimento de operaciones queda vacio (el modelo no las modela
-// todavia), pero se muestra igual para respetar la notacion.
-export function ClassNode({ data, selected }: ClassNodeProps) {
-  const { klass } = data;
+// Caja de clase UML de 3 compartimentos (nombre / atributos / operaciones)
+// con la notacion de Enterprise Architect: "- nombre: Tipo", la clave
+// primaria con llave y subrayada, y [0..1] para lo opcional. El
+// compartimento de operaciones queda vacio (el alcance es de base de datos),
+// pero se dibuja para respetar la notacion.
+function ClassNodeComponent({ data, selected }: { data: ClassNodeData; selected?: boolean }) {
+  const { klass, stereotype } = data;
 
   return (
     <div
-      className={`min-w-[200px] max-w-[320px] border bg-white text-xs text-slate-900 ${
-        selected ? 'border-indigo-600 ring-2 ring-indigo-100' : 'border-slate-800'
+      className={`group min-w-[190px] max-w-[340px] rounded-[3px] border bg-white text-slate-900 shadow-[0_1px_3px_rgb(15_23_42/0.08)] transition-[border-color,box-shadow] duration-150 ${
+        selected ? 'border-indigo-500 ring-[3px] ring-indigo-500/20' : 'border-slate-400 hover:border-slate-500'
       }`}
     >
-      <Handle type="target" position={Position.Left} style={HANDLE_STYLE} />
-      <Handle type="source" position={Position.Right} style={HANDLE_STYLE} />
+      {SIDES.map((side) => (
+        <Handle key={side.id} id={side.id} type="source" position={side.position} className={HANDLE_CLASS} />
+      ))}
 
       <div
-        className="truncate border-b border-slate-800 px-3 py-1.5 text-center text-sm font-bold"
-        title={klass.name}
+        className={`rounded-t-[2px] border-b px-3 pb-1.5 pt-1.5 text-center ${
+          selected ? 'border-indigo-200 bg-indigo-50' : 'border-slate-300 bg-slate-100'
+        }`}
       >
-        {klass.name}
+        {stereotype && <div className="text-[10px] leading-3 text-slate-600">«{stereotype}»</div>}
+        <div className="truncate text-[13px] font-semibold leading-5" title={klass.name}>
+          {klass.name}
+        </div>
       </div>
 
-      <ul className="min-h-[6px] border-b border-slate-800 py-1">
+      <ul className="min-h-[14px] py-1">
         {klass.attributes.map((attr) => (
           <li
             key={attr.id}
-            className="flex items-baseline gap-1 px-2 py-0.5 leading-tight"
-            title={`${attr.name}: ${attr.type}${attr.nullable ? ' [0..1]' : ''}`}
+            className="grid grid-cols-[12px_minmax(0,1fr)] items-center gap-1.5 whitespace-nowrap px-2.5 text-[12px] leading-[18px]"
+            title={`${attr.name}: ${attr.type}${attr.isPrimaryKey ? ' (clave primaria)' : attr.nullable ? ' (opcional)' : ''}`}
           >
-            <span className="shrink-0 text-slate-500">+</span>
+            {attr.isPrimaryKey ? (
+              <IconKey size={11} className="text-amber-600" strokeWidth={2.25} />
+            ) : (
+              <span className="text-center text-slate-400">-</span>
+            )}
             <span className="min-w-0 truncate">
-              <span className={attr.isPrimaryKey ? 'underline decoration-1 underline-offset-2' : ''}>
+              <span className={attr.isPrimaryKey ? 'font-semibold underline decoration-slate-400 underline-offset-2' : ''}>
                 {attr.name}
               </span>
               <span className="text-slate-500">: {attr.type}</span>
-              {attr.nullable && <span className="text-slate-400"> [0..1]</span>}
+              {!attr.isPrimaryKey && attr.nullable && <span className="text-slate-400"> [0..1]</span>}
             </span>
           </li>
         ))}
       </ul>
 
-      <div className="min-h-[10px]" />
+      <div className="h-2.5 border-t border-slate-300" />
     </div>
   );
 }
+
+// Memo: con decenas de clases, arrastrar una no debe re-renderizar las demas.
+export const ClassNode = memo(ClassNodeComponent);

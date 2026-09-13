@@ -1,18 +1,16 @@
 import dagre from 'dagre';
-import type { Edge, Node } from '@xyflow/react';
+import type { Node } from '@xyflow/react';
+import type { UmlRelationship } from '../../types/uml';
 
 // "Organizar diagrama": reacomoda automaticamente las clases con Dagre
 // (layout de grafos dirigidos por capas). Se eligio Dagre sobre ELK.js por
-// ser mucho mas liviano (una sola dependencia sin web worker) y suficiente
-// para el tamaño tipico de un diagrama de clase de un parcial -- ELK da
-// mejor ruteo de aristas pero para reposicionar cajas rectangulares en
-// capas el resultado es equivalente y no justifica el peso extra.
+// ser mucho mas liviano y suficiente para reposicionar cajas rectangulares.
 const DEFAULT_WIDTH = 220;
 const DEFAULT_HEIGHT = 120;
 
-export function computeDagreLayout(nodes: Node[], edges: Edge[]): Map<string, { x: number; y: number }> {
+export function computeDagreLayout(nodes: Node[], relationships: UmlRelationship[]): Map<string, { x: number; y: number }> {
   const graph = new dagre.graphlib.Graph();
-  graph.setGraph({ rankdir: 'LR', nodesep: 60, ranksep: 110, marginx: 40, marginy: 40 });
+  graph.setGraph({ rankdir: 'TB', nodesep: 70, ranksep: 110, marginx: 40, marginy: 40 });
   graph.setDefaultEdgeLabel(() => ({}));
 
   for (const node of nodes) {
@@ -21,9 +19,13 @@ export function computeDagreLayout(nodes: Node[], edges: Edge[]): Map<string, { 
       height: node.measured?.height ?? DEFAULT_HEIGHT,
     });
   }
-  for (const edge of edges) {
-    if (edge.source === edge.target) continue; // dagre no maneja bien auto-ciclos
-    graph.setEdge(edge.source, edge.target);
+  for (const rel of relationships) {
+    if (rel.sourceClassId === rel.targetClassId) continue; // dagre no maneja bien auto-ciclos
+    // Como en un diagrama de clases dibujado a mano: el padre arriba de sus
+    // subclases y el "todo" arriba de sus partes.
+    if (rel.kind === 'ASSOCIATION') graph.setEdge(rel.sourceClassId, rel.targetClassId);
+    else graph.setEdge(rel.targetClassId, rel.sourceClassId);
+    if (rel.associationClassId) graph.setEdge(rel.sourceClassId, rel.associationClassId);
   }
 
   dagre.layout(graph);

@@ -3,11 +3,10 @@ import { ProjectMemberRepository } from '../../../ports/out/ProjectMemberReposit
 import { UmlModelRepository } from '../../../ports/out/UmlModelRepository';
 import { concurrencyBackoff, MAX_CONCURRENCY_RETRIES } from '../../concurrencyRetry';
 import { ConflictError, ForbiddenError } from '../../errors';
+import { assertModelIsConsistent } from './umlOperations';
 
-// Guarda el grafo completo (clases + relaciones) y avanza la revision.
-// Se usa tanto para el reemplazo total via REST/import como base de
-// ApplyUmlOperation para operaciones granulares via Socket.IO, donde la
-// revision es la autoridad de orden entre clientes concurrentes.
+// Reemplaza el grafo completo (clases + relaciones) y avanza la revision.
+// Se usa para el reemplazo total via REST o al importar un XMI.
 export class SaveUmlModel {
   constructor(
     private readonly umlModels: UmlModelRepository,
@@ -27,8 +26,7 @@ export class SaveUmlModel {
       throw new ForbiddenError('No tienes acceso a este proyecto');
     }
 
-    // Mismo control de concurrencia optimista que ApplyUmlOperation: esto
-    // reemplaza el grafo entero (import/guardado REST), asi que si otro
+    // Mismo control de concurrencia optimista que ApplyUmlOperation: si otro
     // cliente escribio una revision distinta mientras tanto, se relee y se
     // reintenta con el mismo `input.classes/relationships` en vez de pisar
     // silenciosamente el cambio ajeno.
@@ -42,6 +40,7 @@ export class SaveUmlModel {
         relationships: input.relationships,
         revision: base.revision + 1,
       };
+      assertModelIsConsistent(model);
 
       const saved = await this.umlModels.save(model, current ? current.revision : null);
       if (saved) return model;

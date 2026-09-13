@@ -25,16 +25,35 @@ export interface UmlAttribute {
   defaultValue?: string;
 }
 
-export type RelationshipType = 'ONE_TO_ONE' | 'ONE_TO_MANY' | 'MANY_TO_ONE' | 'MANY_TO_MANY';
-export type Multiplicity = '1' | 'N';
+// - ASSOCIATION: asociacion simple.
+// - AGGREGATION / COMPOSITION: target = TODO (rombo), source = PARTE.
+// - GENERALIZATION: source = subclase, target = padre (triangulo).
+export const RELATIONSHIP_KINDS = ['ASSOCIATION', 'AGGREGATION', 'COMPOSITION', 'GENERALIZATION'] as const;
+export type RelationshipKind = (typeof RELATIONSHIP_KINDS)[number];
+
+export const RELATIONSHIP_KIND_LABEL: Record<RelationshipKind, string> = {
+  ASSOCIATION: 'Asociacion',
+  AGGREGATION: 'Agregacion',
+  COMPOSITION: 'Composicion',
+  GENERALIZATION: 'Herencia',
+};
+
+export const MULTIPLICITIES = ['1', '0..1', '0..*', '1..*'] as const;
+export type Multiplicity = (typeof MULTIPLICITIES)[number];
+
+export function isManyMultiplicity(m: Multiplicity): boolean {
+  return m === '0..*' || m === '1..*';
+}
 
 export interface UmlRelationship {
   id: string;
   sourceClassId: string;
   targetClassId: string;
-  type: RelationshipType;
+  kind: RelationshipKind;
   sourceMultiplicity: Multiplicity;
   targetMultiplicity: Multiplicity;
+  name?: string;
+  associationClassId?: string;
 }
 
 export interface UmlClass {
@@ -51,3 +70,12 @@ export interface UmlModel {
   relationships: UmlRelationship[];
   revision: number;
 }
+
+// Multiplicidades por defecto al dibujar cada tipo de relacion (mismas que
+// usa Enterprise Architect al trazar el conector de la parte al todo).
+export const DEFAULT_MULTIPLICITIES: Record<RelationshipKind, { source: Multiplicity; target: Multiplicity }> = {
+  ASSOCIATION: { source: '1', target: '0..*' },
+  AGGREGATION: { source: '0..*', target: '1' },
+  COMPOSITION: { source: '1..*', target: '1' },
+  GENERALIZATION: { source: '1', target: '1' },
+};

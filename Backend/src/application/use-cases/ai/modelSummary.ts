@@ -8,6 +8,8 @@ export function buildModelSummary(model: UmlModel): string {
     return 'El proyecto todavia no tiene clases.';
   }
 
+  const nameOf = (id: string) => model.classes.find((c) => c.id === id)?.name ?? '?';
+
   const classesText = model.classes
     .map((klass) => {
       const attrs = klass.attributes.length
@@ -22,9 +24,12 @@ export function buildModelSummary(model: UmlModel): string {
   const relationshipsText = model.relationships.length
     ? model.relationships
         .map((rel) => {
-          const source = model.classes.find((c) => c.id === rel.sourceClassId)?.name ?? '?';
-          const target = model.classes.find((c) => c.id === rel.targetClassId)?.name ?? '?';
-          return `- ${source} (${rel.sourceMultiplicity}) -- ${rel.type} -- (${rel.targetMultiplicity}) ${target}`;
+          const role = rel.name ? ` rol "${rel.name}"` : '';
+          if (rel.kind === 'GENERALIZATION') {
+            return `- GENERALIZATION: ${nameOf(rel.sourceClassId)} hereda de ${nameOf(rel.targetClassId)}`;
+          }
+          const associationClass = rel.associationClassId ? `, clase asociacion ${nameOf(rel.associationClassId)}` : '';
+          return `- ${rel.kind}${role}: source ${nameOf(rel.sourceClassId)} "${rel.sourceMultiplicity}" -- "${rel.targetMultiplicity}" target ${nameOf(rel.targetClassId)}${associationClass}`;
         })
         .join('\n')
     : 'Sin relaciones.';

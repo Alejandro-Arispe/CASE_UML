@@ -213,3 +213,37 @@ funcionando junto:
 
 Con esto las 12 fases del documento estan implementadas y verificadas
 funcionando en conjunto, no solo de forma aislada.
+
+## Diagrama de clases completo y compatibilidad con Enterprise Architect
+
+> Requiere aplicar la migracion `20260912120000_relationship_kinds`
+> (`npm run prisma:migrate` en `Backend/`).
+
+- **Relaciones**: asociacion, agregacion, composicion y herencia, con
+  multiplicidades `1`, `0..1`, `0..*`, `1..*`, nombre/rol y **clase
+  asociacion**. Convencion: en agregacion/composicion `target` es el TODO y
+  `source` la PARTE; en herencia `source` es la subclase y `target` el padre.
+- **Editor**: notacion de EA (rombos, triangulo, linea punteada de clase
+  asociacion, lazo en autorrelaciones), conexion al borde mas cercano, barra
+  "Conectar como" para elegir el tipo al arrastrar, panel de relacion que
+  explica que se generara en la base, invertir direccion, edicion de nombres
+  que confirma al salir del campo (no en cada tecla).
+- **XMI**: importa XMI 2.1 exportado por Enterprise Architect (ids `EAID_`,
+  tipos `EAJava_*`, codificacion windows-1252, conectores, ProxyConnector de
+  clases asociacion y posiciones del diagrama) o XMI UML estandar; exporta
+  con la misma estructura de EA, incluido el diagrama. Probado con ida y
+  vuelta sin perdidas sobre un modelo real de EA (herencia, composicion,
+  agregacion, clase asociacion y autorrelacion N:M).
+- **Generador**: herencia JOINED, FK segun multiplicidades, 1:1 con UNIQUE,
+  N:M con tabla intermedia (tambien reflexiva), composicion con cascade,
+  clase asociacion como entidad con dos FK, CORS, manejo global de errores
+  (400/404/409), inyeccion por constructor y README en el zip. El validador
+  detecta antes de generar choques de columnas (ej. un atributo `clienteId`
+  que duplica la FK), dos relaciones sin rol entre las mismas clases,
+  palabras reservadas y PK faltantes o compuestas.
+- **IA**: prompt orientado a diseno de base de datos, pedido por **voz**
+  (Web Speech API, Chrome/Edge), archivos de imagen (incluido HEIC) o PDF, y
+  aplicacion de todos los cambios en una sola transaccion.
+- **Rendimiento**: el guardado escribe solo las diferencias (mover una clase
+  es un UPDATE, no reescribir el diagrama); organizar, alinear y duplicar
+  viajan como un lote.

@@ -13,7 +13,10 @@ function elementLabel(issueElementId: string): string {
   const klass = state.classes.find((c) => c.id === issueElementId);
   if (klass) return klass.name || '(sin nombre)';
   const rel = state.relationships.find((r) => r.id === issueElementId);
-  if (rel) return 'relacion';
+  if (rel) {
+    const nameOf = (id: string) => state.classes.find((c) => c.id === id)?.name ?? '?';
+    return `relacion ${nameOf(rel.sourceClassId)} - ${nameOf(rel.targetClassId)}`;
+  }
   for (const c of state.classes) {
     const attr = c.attributes.find((a) => a.id === issueElementId);
     if (attr) return `${c.name}.${attr.name || '(sin nombre)'}`;
@@ -36,7 +39,7 @@ export function ValidationPanel({ projectId, onClose }: { projectId: string; onC
       {loading && <p className="text-slate-400">Validando...</p>}
 
       {!loading && result?.valid && (
-        <div className="flex items-center gap-2 rounded-md bg-emerald-50 px-3 py-2.5 text-emerald-700">
+        <div className="mb-3 flex items-center gap-2 rounded-md bg-emerald-50 px-3 py-2.5 text-emerald-700">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5 shrink-0">
             <path
               fillRule="evenodd"
@@ -44,25 +47,39 @@ export function ValidationPanel({ projectId, onClose }: { projectId: string; onC
               clipRule="evenodd"
             />
           </svg>
-          <span className="text-sm font-medium">El modelo es valido: no se encontraron problemas.</span>
+          <span className="text-sm font-medium">
+            {result.issues.length === 0
+              ? 'El modelo es valido: no se encontraron problemas.'
+              : 'El modelo es valido y se puede generar (revisa las advertencias).'}
+          </span>
         </div>
       )}
 
-      {!loading && result && !result.valid && (
+      {!loading && result && result.issues.length > 0 && (
         <>
-          <div className="mb-3 flex items-center gap-2">
-            <Badge tone="danger">{result.issues.length} problema(s)</Badge>
-            <span className="text-sm text-slate-500">El modelo no puede generarse hasta resolverlos.</span>
-          </div>
+          {!result.valid && (
+            <div className="mb-3 flex items-center gap-2">
+              <Badge tone="danger">{result.issues.filter((i) => i.severity === 'ERROR').length} error(es)</Badge>
+              <span className="text-sm text-slate-500">El modelo no puede generarse hasta resolverlos.</span>
+            </div>
+          )}
           <ul className="space-y-2">
-            {result.issues.map((issue, index) => (
-              <li key={`${issue.code}-${issue.elementId}-${index}`} className="rounded-md border border-red-100 bg-red-50 px-3 py-2">
-                <span className="text-xs font-medium uppercase tracking-wide text-red-500">
-                  {issue.elementType} · {elementLabel(issue.elementId)}
-                </span>
-                <p className="text-sm text-red-700">{issue.message}</p>
-              </li>
-            ))}
+            {[...result.issues]
+              .sort((a, b) => (a.severity === b.severity ? 0 : a.severity === 'ERROR' ? -1 : 1))
+              .map((issue, index) => {
+                const isError = issue.severity === 'ERROR';
+                return (
+                  <li
+                    key={`${issue.code}-${issue.elementId}-${index}`}
+                    className={`rounded-md border px-3 py-2 ${isError ? 'border-red-100 bg-red-50' : 'border-amber-100 bg-amber-50'}`}
+                  >
+                    <span className={`text-xs font-medium uppercase tracking-wide ${isError ? 'text-red-500' : 'text-amber-600'}`}>
+                      {isError ? 'Error' : 'Advertencia'} · {elementLabel(issue.elementId)}
+                    </span>
+                    <p className={`text-sm ${isError ? 'text-red-700' : 'text-amber-800'}`}>{issue.message}</p>
+                  </li>
+                );
+              })}
           </ul>
         </>
       )}

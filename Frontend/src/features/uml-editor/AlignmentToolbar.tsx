@@ -1,7 +1,7 @@
 import { useReactFlow } from '@xyflow/react';
 import { useUmlStore } from '../../store/umlStore';
 import * as collaboration from './collaboration';
-import { Button } from '../../components/ui/Button';
+import { ToolButton, ToolbarDivider } from '../../components/ui/IconButton';
 
 const DEFAULT_WIDTH = 220;
 const DEFAULT_HEIGHT = 100;
@@ -38,46 +38,47 @@ export function AlignmentToolbar({ selectedIds }: { selectedIds: string[] }) {
     };
   }
 
-  function withBoxes(fn: (boxes: Box[]) => void) {
-    fn(selectedIds.map(getBox));
+  // Calcula la nueva posicion de cada caja y la envia como UN lote.
+  function withBoxes(fn: (boxes: Box[]) => [string, { x: number; y: number }][]) {
+    collaboration.moveClasses(new Map(fn(selectedIds.map(getBox))));
   }
 
   const alignLeft = () =>
     withBoxes((boxes) => {
       const minX = Math.min(...boxes.map((b) => b.x));
-      boxes.forEach((b) => collaboration.moveClass(b.id, { x: minX, y: b.y }));
+      return boxes.map((b) => [b.id, { x: minX, y: b.y }]);
     });
 
   const alignRight = () =>
     withBoxes((boxes) => {
       const maxRight = Math.max(...boxes.map((b) => b.x + b.width));
-      boxes.forEach((b) => collaboration.moveClass(b.id, { x: maxRight - b.width, y: b.y }));
+      return boxes.map((b) => [b.id, { x: maxRight - b.width, y: b.y }]);
     });
 
   const alignTop = () =>
     withBoxes((boxes) => {
       const minY = Math.min(...boxes.map((b) => b.y));
-      boxes.forEach((b) => collaboration.moveClass(b.id, { x: b.x, y: minY }));
+      return boxes.map((b) => [b.id, { x: b.x, y: minY }]);
     });
 
   const alignBottom = () =>
     withBoxes((boxes) => {
       const maxBottom = Math.max(...boxes.map((b) => b.y + b.height));
-      boxes.forEach((b) => collaboration.moveClass(b.id, { x: b.x, y: maxBottom - b.height }));
+      return boxes.map((b) => [b.id, { x: b.x, y: maxBottom - b.height }]);
     });
 
   const alignCenterH = () =>
     withBoxes((boxes) => {
       const centers = boxes.map((b) => b.x + b.width / 2);
       const avg = centers.reduce((a, b) => a + b, 0) / centers.length;
-      boxes.forEach((b) => collaboration.moveClass(b.id, { x: avg - b.width / 2, y: b.y }));
+      return boxes.map((b) => [b.id, { x: avg - b.width / 2, y: b.y }]);
     });
 
   const alignCenterV = () =>
     withBoxes((boxes) => {
       const centers = boxes.map((b) => b.y + b.height / 2);
       const avg = centers.reduce((a, b) => a + b, 0) / centers.length;
-      boxes.forEach((b) => collaboration.moveClass(b.id, { x: b.x, y: avg - b.height / 2 }));
+      return boxes.map((b) => [b.id, { x: b.x, y: avg - b.height / 2 }]);
     });
 
   const distributeHorizontal = () =>
@@ -88,9 +89,10 @@ export function AlignmentToolbar({ selectedIds }: { selectedIds: string[] }) {
       const totalWidth = boxes.reduce((sum, b) => sum + b.width, 0);
       const gap = (last.x + last.width - first.x - totalWidth) / (boxes.length - 1);
       let cursor = first.x;
-      boxes.forEach((b) => {
-        collaboration.moveClass(b.id, { x: cursor, y: b.y });
+      return boxes.map((b) => {
+        const entry: [string, { x: number; y: number }] = [b.id, { x: cursor, y: b.y }];
         cursor += b.width + gap;
+        return entry;
       });
     });
 
@@ -102,55 +104,47 @@ export function AlignmentToolbar({ selectedIds }: { selectedIds: string[] }) {
       const totalHeight = boxes.reduce((sum, b) => sum + b.height, 0);
       const gap = (last.y + last.height - first.y - totalHeight) / (boxes.length - 1);
       let cursor = first.y;
-      boxes.forEach((b) => {
-        collaboration.moveClass(b.id, { x: b.x, y: cursor });
+      return boxes.map((b) => {
+        const entry: [string, { x: number; y: number }] = [b.id, { x: b.x, y: cursor }];
         cursor += b.height + gap;
+        return entry;
       });
     });
 
   const canDistribute = selectedIds.length >= 3;
 
+  const glyph = (path: string) => (
+    <svg viewBox="0 0 24 24" width={16} height={16} fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" aria-hidden="true">
+      <path d={path} />
+    </svg>
+  );
+
   return (
-    <div className="flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 shadow-sm">
-      <span className="pr-1 text-xs font-medium text-slate-400">{selectedIds.length} seleccionadas</span>
-      <Button variant="ghost" size="sm" title="Alinear a la izquierda" onClick={alignLeft}>
-        Izq
-      </Button>
-      <Button variant="ghost" size="sm" title="Alinear al centro (horizontal)" onClick={alignCenterH}>
-        Centro H
-      </Button>
-      <Button variant="ghost" size="sm" title="Alinear a la derecha" onClick={alignRight}>
-        Der
-      </Button>
-      <span className="mx-1 h-4 w-px bg-slate-200" />
-      <Button variant="ghost" size="sm" title="Alinear arriba" onClick={alignTop}>
-        Arriba
-      </Button>
-      <Button variant="ghost" size="sm" title="Alinear al centro (vertical)" onClick={alignCenterV}>
-        Centro V
-      </Button>
-      <Button variant="ghost" size="sm" title="Alinear abajo" onClick={alignBottom}>
-        Abajo
-      </Button>
-      <span className="mx-1 h-4 w-px bg-slate-200" />
-      <Button
-        variant="ghost"
-        size="sm"
-        title="Distribuir horizontalmente (necesita 3 o mas)"
+    <div className="flex items-center gap-0.5 rounded-lg border border-slate-200 bg-white p-1 shadow-lg">
+      <span className="px-2 text-xs font-medium tabular-nums text-slate-700">{selectedIds.length} clases</span>
+      <ToolbarDivider />
+      <ToolButton label="Alinear a la izquierda" icon={glyph('M4 3v18M8 7h12M8 17h7')} onClick={alignLeft} />
+      <ToolButton label="Centrar horizontalmente" icon={glyph('M12 3v18M6 7h12M8.5 17h7')} onClick={alignCenterH} />
+      <ToolButton label="Alinear a la derecha" icon={glyph('M20 3v18M4 7h12M9 17h7')} onClick={alignRight} />
+      <ToolbarDivider />
+      <ToolButton label="Alinear arriba" icon={glyph('M3 4h18M7 8v12M17 8v7')} onClick={alignTop} />
+      <ToolButton label="Centrar verticalmente" icon={glyph('M3 12h18M7 6v12M17 8.5v7')} onClick={alignCenterV} />
+      <ToolButton label="Alinear abajo" icon={glyph('M3 20h18M7 4v12M17 9v7')} onClick={alignBottom} />
+      <ToolbarDivider />
+      <ToolButton
+        label="Distribuir horizontalmente (3 o mas)"
+        icon={glyph('M4 4v16M20 4v16M10 8v8M14 8v8')}
         disabled={!canDistribute}
         onClick={distributeHorizontal}
-      >
-        Distrib. H
-      </Button>
-      <Button
-        variant="ghost"
-        size="sm"
-        title="Distribuir verticalmente (necesita 3 o mas)"
+        tooltipAlign="end"
+      />
+      <ToolButton
+        label="Distribuir verticalmente (3 o mas)"
+        icon={glyph('M4 4h16M4 20h16M8 10h8M8 14h8')}
         disabled={!canDistribute}
         onClick={distributeVertical}
-      >
-        Distrib. V
-      </Button>
+        tooltipAlign="end"
+      />
     </div>
   );
 }

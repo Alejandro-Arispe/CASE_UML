@@ -1,24 +1,25 @@
-import { UML_DATA_TYPES, UmlModel } from '../entities';
+import { MULTIPLICITIES, RELATIONSHIP_KINDS, UML_DATA_TYPES, UmlModel } from '../entities';
 import { toCamelCase, toPascalCase } from '../naming';
-import { ValidationIssue, ValidationResult } from './ValidationIssue';
+import { toValidationResult, ValidationIssue, ValidationResult } from './ValidationIssue';
 
-const VALID_MULTIPLICITIES = ['1', 'N'];
-
-// Validador del modelo UML completo (seccion 17): corre antes del
-// generador y detecta problemas que ninguna entidad puede ver por si sola
-// (nombres duplicados, relaciones colgantes, IDs repetidos, entidades sin
-// PK). Las invariantes de una sola entidad (ej. nombre no vacio al crearla)
-// ya las cubren las factories de dominio; esto valida el GRAFO completo.
-// No genera nada invalido en silencio: si hay issues, el modelo no es
-// valido para generar, aunque pueda seguir existiendo visualmente.
+// Validador estructural del modelo UML completo (seccion 17): detecta
+// problemas que ninguna entidad puede ver por si sola (nombres duplicados,
+// relaciones colgantes, IDs repetidos, herencia circular). Las reglas que
+// dependen de COMO se genera el backend (claves primarias, choques de
+// columnas/FK, palabras reservadas) viven en generator/planGeneration.ts,
+// porque necesitan calcular exactamente los nombres que se van a generar.
 export function validateUmlModel(model: UmlModel): ValidationResult {
   const issues: ValidationIssue[] = [];
   const seenIds = new Set<string>();
   const seenClassNames = new Map<string, string>();
 
+  function error(issue: Omit<ValidationIssue, 'severity'>) {
+    issues.push({ ...issue, severity: 'ERROR' });
+  }
+
   function checkDuplicateId(id: string, elementType: ValidationIssue['elementType'], label: string) {
     if (seenIds.has(id)) {
-      issues.push({ code: 'DUPLICATE_ID', elementType, elementId: id, message: `ID duplicado en ${label}: ${id}` });
+      error({ code: 'DUPLICATE_ID', elementType, elementId: id, message: `ID duplicado en ${label}: ${id}` });
     } else {
       seenIds.add(id);
     }
@@ -29,16 +30,14 @@ export function validateUmlModel(model: UmlModel): ValidationResult {
 
     const name = klass.name.trim();
     if (!name) {
-      issues.push({ code: 'CLASS_WITHOUT_NAME', elementType: 'CLASS', elementId: klass.id, message: 'La clase no tiene nombre' });
+      error({ code: 'CLASS_WITHOUT_NAME', elementType: 'CLASS', elementId: klass.id, message: 'La clase no tiene nombre' });
     } else {
       // La clave de duplicado es el identificador Java que el generador
       // realmente va a producir (toPascalCase), no el texto tal cual lo
-      // escribio el usuario: "Cliente_1" y "cliente-1" son strings
-      // distintos pero generan la misma clase "Cliente1", y esa colision
-      // solo se detecta si se compara con la misma normalizacion.
+      // escribio el usuario: "Cliente_1" y "cliente-1" generan "Cliente1".
       const key = toPascalCase(name);
       if (seenClassNames.has(key)) {
-        issues.push({
+        error({
           code: 'DUPLICATE_CLASS_NAME',
           elementType: 'CLASS',
           elementId: klass.id,
@@ -49,29 +48,13 @@ export function validateUmlModel(model: UmlModel): ValidationResult {
       }
     }
 
-    // Seccion 16: sin PK el modelo puede seguir existiendo, pero no es
-    // valido para generar.
-    if (!klass.attributes.some((a) => a.isPrimaryKey)) {
-      issues.push({
-        code: 'ENTITY_WITHOUT_PRIMARY_KEY',
-        elementType: 'CLASS',
-        elementId: klass.id,
-        message: `La clase "${name || klass.id}" no tiene clave primaria`,
-      });
-    }
-
-    // Nombres de atributo duplicados DENTRO de esta clase (reseteado por
-    // clase, a diferencia de seenClassNames que es global al modelo): el
-    // generador mapea el nombre a un fieldName con toCamelCase, asi que
-    // "Email" y "email" en la misma clase producen el mismo campo Java.
     const seenAttributeNames = new Map<string, string>();
-
     for (const attr of klass.attributes) {
       checkDuplicateId(attr.id, 'ATTRIBUTE', 'atributo');
 
       const attrName = attr.name.trim();
       if (!attrName) {
-        issues.push({
+        error({
           code: 'ATTRIBUTE_WITHOUT_NAME',
           elementType: 'ATTRIBUTE',
           elementId: attr.id,
@@ -80,7 +63,7 @@ export function validateUmlModel(model: UmlModel): ValidationResult {
       } else {
         const attrKey = toCamelCase(attrName);
         if (seenAttributeNames.has(attrKey)) {
-          issues.push({
+          error({
             code: 'DUPLICATE_ATTRIBUTE_NAME',
             elementType: 'ATTRIBUTE',
             elementId: attr.id,
@@ -92,7 +75,7 @@ export function validateUmlModel(model: UmlModel): ValidationResult {
       }
 
       if (!UML_DATA_TYPES.includes(attr.type)) {
-        issues.push({
+        error({
           code: 'ATTRIBUTE_WITHOUT_TYPE',
           elementType: 'ATTRIBUTE',
           elementId: attr.id,
@@ -103,40 +86,86 @@ export function validateUmlModel(model: UmlModel): ValidationResult {
   }
 
   const classIds = new Set(model.classes.map((c) => c.id));
+  const classNameById = new Map(model.classes.map((c) => [c.id, c.name]));
+  const parentsByChild = new Map<string, string[]>();
 
   for (const rel of model.relationships) {
     checkDuplicateId(rel.id, 'RELATIONSHIP', 'relacion');
 
     if (!classIds.has(rel.sourceClassId) || !classIds.has(rel.targetClassId)) {
-      issues.push({
+      error({
         code: 'RELATIONSHIP_TO_UNKNOWN_CLASS',
         elementType: 'RELATIONSHIP',
         elementId: rel.id,
         message: 'La relacion referencia una clase inexistente',
       });
+      continue;
     }
 
-    // M:N de una clase consigo misma: el generador arma un @JoinTable cuyo
-    // joinColumnName e inverseJoinColumnName salen identicos (mismo
-    // tableName de origen y destino), lo que Hibernate rechaza al arrancar.
-    if (rel.type === 'MANY_TO_MANY' && rel.sourceClassId === rel.targetClassId) {
-      issues.push({
-        code: 'RELATIONSHIP_SELF_REFERENCE_MANY_TO_MANY',
-        elementType: 'RELATIONSHIP',
-        elementId: rel.id,
-        message: 'Una relacion Muchos a Muchos no puede ser de una clase consigo misma',
-      });
+    if (!RELATIONSHIP_KINDS.includes(rel.kind)) {
+      error({ code: 'INVALID_RELATIONSHIP_KIND', elementType: 'RELATIONSHIP', elementId: rel.id, message: 'Tipo de relacion invalido' });
     }
 
-    if (!VALID_MULTIPLICITIES.includes(rel.sourceMultiplicity) || !VALID_MULTIPLICITIES.includes(rel.targetMultiplicity)) {
-      issues.push({
+    if (!MULTIPLICITIES.includes(rel.sourceMultiplicity) || !MULTIPLICITIES.includes(rel.targetMultiplicity)) {
+      error({
         code: 'INVALID_MULTIPLICITY',
         elementType: 'RELATIONSHIP',
         elementId: rel.id,
-        message: 'Multiplicidad invalida en la relacion (debe ser "1" o "N")',
+        message: `Multiplicidad invalida en la relacion (valores permitidos: ${MULTIPLICITIES.join(', ')})`,
+      });
+    }
+
+    if (rel.associationClassId) {
+      const invalid =
+        rel.kind !== 'ASSOCIATION' ||
+        !classIds.has(rel.associationClassId) ||
+        rel.associationClassId === rel.sourceClassId ||
+        rel.associationClassId === rel.targetClassId;
+      if (invalid) {
+        error({
+          code: 'INVALID_ASSOCIATION_CLASS',
+          elementType: 'RELATIONSHIP',
+          elementId: rel.id,
+          message: 'La clase asociacion debe ser una clase existente, distinta de los extremos, sobre una asociacion',
+        });
+      }
+    }
+
+    if (rel.kind === 'GENERALIZATION') {
+      parentsByChild.set(rel.sourceClassId, [...(parentsByChild.get(rel.sourceClassId) ?? []), rel.targetClassId]);
+    }
+  }
+
+  // JPA solo admite un padre por entidad.
+  for (const [childId, parents] of parentsByChild) {
+    if (parents.length > 1) {
+      error({
+        code: 'MULTIPLE_INHERITANCE',
+        elementType: 'CLASS',
+        elementId: childId,
+        message: `"${classNameById.get(childId)}" hereda de mas de una clase; solo se admite un padre por clase`,
       });
     }
   }
 
-  return { valid: issues.length === 0, issues };
+  // Ciclos de herencia (A hereda de B y B de A, directa o indirectamente).
+  for (const childId of parentsByChild.keys()) {
+    const visited = new Set<string>();
+    let current: string | undefined = childId;
+    while (current && parentsByChild.has(current)) {
+      if (visited.has(current)) {
+        error({
+          code: 'INHERITANCE_CYCLE',
+          elementType: 'CLASS',
+          elementId: childId,
+          message: `La herencia de "${classNameById.get(childId)}" forma un ciclo`,
+        });
+        break;
+      }
+      visited.add(current);
+      current = parentsByChild.get(current)?.[0];
+    }
+  }
+
+  return toValidationResult(issues);
 }

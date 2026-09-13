@@ -14,3 +14,26 @@ body {
   margin: 0;
   @apply bg-slate-50 text-slate-900 antialiased;
 }
+
+/* Editor de diagramas: seleccion por arrastre con el acento de la app en
+   vez del gris por defecto de React Flow. */
+.react-flow__selection,
+.react-flow__nodesselection-rect {
+  background: rgb(79 70 229 / 0.06);
+  border: 1px solid rgb(79 70 229 / 0.45);
+  border-radius: 2px;
+}
+
+.react-flow__edge:not(.selected):hover .react-flow__edge-path {
+  stroke: #1e293b;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

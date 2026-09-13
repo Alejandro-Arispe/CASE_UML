@@ -9,6 +9,11 @@ export class PrismaEditHistoryRepository implements EditHistoryRepository {
     await this.prisma.editHistory.create({ data: entry });
   }
 
+  async addMany(entries: EditHistory[]): Promise<void> {
+    if (entries.length === 0) return;
+    await this.prisma.editHistory.createMany({ data: entries });
+  }
+
   findRecentByProject(projectId: string, limit = 50): Promise<EditHistory[]> {
     return this.prisma.editHistory.findMany({
       where: { projectId },

@@ -1,5 +1,7 @@
 import { Server as HttpServer } from 'http';
 import { Server as SocketIOServer, Socket } from 'socket.io';
+import { z } from 'zod';
+import { OPERATION_EVENT_NAME } from '../../application/use-cases/uml/umlOperations';
 import { env } from '../../config/env';
 import { TokenService } from '../../ports/out/TokenService';
 import { ProjectMemberRepository } from '../../ports/out/ProjectMemberRepository';
@@ -7,8 +9,21 @@ import { ApplyUmlOperation } from '../../application/use-cases/uml/ApplyUmlOpera
 import { SaveUmlModel } from '../../application/use-cases/uml/SaveUmlModel';
 import { RunAiCommand } from '../../application/use-cases/ai/RunAiCommand';
 import { DomainError } from '../../domain/errors/DomainError';
+import { ConflictError, ForbiddenError } from '../../application/errors';
 import { umlOperationSchema } from './umlOperation.schema';
 import { saveUmlModelSchema } from '../http/dto/umlModel.dto';
+
+// Solo los errores "esperables" (reglas de negocio, permisos, concurrencia)
+// llevan su mensaje al cliente; cualquier otro (Prisma, red, bugs) se loguea
+// en el servidor y el cliente recibe un mensaje generico, igual que en el
+// errorHandler HTTP.
+function clientErrorMessage(err: unknown, fallback: string): string {
+  if (err instanceof DomainError || err instanceof ForbiddenError || err instanceof ConflictError) {
+    return err.message;
+  }
+  console.error(err);
+  return fallback;
+}
 
 interface SocketData {
   userId: string;
@@ -145,11 +160,43 @@ export function createSocketServer(
         socket.to(projectRoom(data.projectId)).emit(eventName, { ...parsed.data, revision: model.revision });
         // El historial se difunde a todos, incluido el emisor: alimenta el
         // "ultimo movimiento" en vivo para todos los conectados (seccion 27).
-        io.to(projectRoom(data.projectId)).emit('history_entry', historyEntry);
+        if (historyEntry) io.to(projectRoom(data.projectId)).emit('history_entry', historyEntry);
         ack?.({ ok: true, revision: model.revision });
       } catch (err) {
-        const message = err instanceof DomainError || err instanceof Error ? err.message : 'Error al procesar la operacion';
-        ack?.({ ok: false, error: message });
+        ack?.({ ok: false, error: clientErrorMessage(err, 'Error al procesar la operacion') });
+      }
+    });
+
+    // Lote de operaciones de un mismo gesto (organizar diagrama, alinear,
+    // duplicar una clase con sus atributos): una sola transaccion y revision.
+    socket.on('uml_operations', async (rawOperations: unknown, ack?: (res: { ok: boolean; error?: string; revision?: number }) => void) => {
+      if (!data.projectId) {
+        ack?.({ ok: false, error: 'No estas unido a ningun proyecto' });
+        return;
+      }
+
+      const parsed = z.array(umlOperationSchema).min(1).max(500).safeParse(rawOperations);
+      if (!parsed.success) {
+        ack?.({ ok: false, error: 'Operaciones invalidas' });
+        return;
+      }
+
+      try {
+        const { model, historyEntries } = await deps.applyUmlOperation.executeBatch({
+          projectId: data.projectId,
+          userId: data.userId,
+          operations: parsed.data,
+        });
+
+        const room = projectRoom(data.projectId);
+        for (const operation of parsed.data) {
+          socket.to(room).emit(OPERATION_EVENT_NAME[operation.operation], { ...operation, revision: model.revision });
+        }
+        const lastEntry = historyEntries[historyEntries.length - 1];
+        if (lastEntry) io.to(room).emit('history_entry', lastEntry);
+        ack?.({ ok: true, revision: model.revision });
+      } catch (err) {
+        ack?.({ ok: false, error: clientErrorMessage(err, 'Error al procesar las operaciones') });
       }
     });
 
@@ -177,27 +224,27 @@ export function createSocketServer(
         }
 
         try {
-          const { applied, skipped } = await deps.runAiCommand.execute({
+          const { model, historyEntries, appliedCount, skipped } = await deps.runAiCommand.execute({
             projectId: data.projectId,
             userId: data.userId,
             prompt,
             image,
           });
 
-          const room = projectRoom(data.projectId);
           // A diferencia de uml_operation, aca NADIE aplico nada de forma
-          // optimista (el usuario solo escribio un pedido): se difunde a
-          // todos, incluido quien lo pidio, para que todos vean el
-          // resultado de la IA construirse en vivo (seccion 30).
-          for (const result of applied) {
-            io.to(room).emit(result.eventName, { ...result.operation, revision: result.model.revision });
-            io.to(room).emit('history_entry', result.historyEntry);
+          // optimista (el usuario solo escribio un pedido): el lote completo
+          // se aplico en una transaccion y se difunde a todos, incluido quien
+          // lo pidio, como reemplazo del modelo (seccion 30).
+          if (model) {
+            const room = projectRoom(data.projectId);
+            io.to(room).emit('model_replaced', model);
+            const lastEntry = historyEntries[historyEntries.length - 1];
+            if (lastEntry) io.to(room).emit('history_entry', lastEntry);
           }
 
-          ack?.({ ok: true, applied: applied.length, skipped: skipped.map((s) => ({ reason: s.reason })) });
+          ack?.({ ok: true, applied: appliedCount, skipped: skipped.map((s) => ({ reason: s.reason })) });
         } catch (err) {
-          const message = err instanceof DomainError || err instanceof Error ? err.message : 'Error al procesar el pedido';
-          ack?.({ ok: false, error: message });
+          ack?.({ ok: false, error: clientErrorMessage(err, 'Error al procesar el pedido con la IA') });
         }
       },
     );
@@ -231,8 +278,7 @@ export function createSocketServer(
           io.to(projectRoom(data.projectId)).emit('model_replaced', model);
           ack?.({ ok: true, revision: model.revision });
         } catch (err) {
-          const message = err instanceof DomainError || err instanceof Error ? err.message : 'Error al importar el modelo';
-          ack?.({ ok: false, error: message });
+          ack?.({ ok: false, error: clientErrorMessage(err, 'Error al importar el modelo') });
         }
       },
     );

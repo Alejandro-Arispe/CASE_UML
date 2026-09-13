@@ -1,6 +1,6 @@
 import {
   Multiplicity,
-  RelationshipType,
+  RelationshipKind,
   UmlAttribute,
   UmlClass,
   UmlDataType,
@@ -45,11 +45,27 @@ export type UmlOperationInput =
       relationshipId: string;
       sourceClassId: string;
       targetClassId: string;
-      type: RelationshipType;
+      kind: RelationshipKind;
       sourceMultiplicity: Multiplicity;
       targetMultiplicity: Multiplicity;
+      name?: string;
+      associationClassId?: string;
     }
-  | { operation: 'UPDATE_RELATIONSHIP'; relationshipId: string; type: RelationshipType }
+  | {
+      // Parche parcial: solo se modifican los campos presentes. `name: ""`
+      // y `associationClassId: null` quitan el valor. Cambiar
+      // source/target permite "invertir direccion" (ej. una herencia
+      // dibujada al reves).
+      operation: 'UPDATE_RELATIONSHIP';
+      relationshipId: string;
+      kind?: RelationshipKind;
+      sourceClassId?: string;
+      targetClassId?: string;
+      sourceMultiplicity?: Multiplicity;
+      targetMultiplicity?: Multiplicity;
+      name?: string;
+      associationClassId?: string | null;
+    }
   | {
       operation: 'SET_MULTIPLICITY';
       relationshipId: string;
@@ -87,6 +103,69 @@ function getRelationshipOrThrow(model: UmlModel, relationshipId: string): UmlRel
   return rel;
 }
 
+function cleanName(name: string | undefined): string | undefined {
+  const trimmed = name?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+// Reglas que dependen de otras relaciones del modelo (no solo de la nueva):
+// una herencia no puede ser de una clase consigo misma ni formar un ciclo, y
+// una clase asociacion no puede ser uno de los extremos de su propia linea.
+function assertRelationshipIsConsistent(model: UmlModel, rel: UmlRelationship) {
+  getClassOrThrow(model, rel.sourceClassId);
+  getClassOrThrow(model, rel.targetClassId);
+
+  if (rel.kind === 'GENERALIZATION') {
+    if (rel.sourceClassId === rel.targetClassId) {
+      throw new DomainError('Una clase no puede heredar de si misma');
+    }
+    // Recorre los padres del destino: si se llega al origen, habria ciclo.
+    const parentsOf = (classId: string) =>
+      model.relationships
+        .filter((r) => r.id !== rel.id && r.kind === 'GENERALIZATION' && r.sourceClassId === classId)
+        .map((r) => r.targetClassId);
+    const pending = [rel.targetClassId];
+    const visited = new Set<string>();
+    while (pending.length) {
+      const current = pending.pop()!;
+      if (current === rel.sourceClassId) throw new DomainError('La herencia formaria un ciclo');
+      if (visited.has(current)) continue;
+      visited.add(current);
+      pending.push(...parentsOf(current));
+    }
+  }
+
+  if (rel.associationClassId) {
+    if (rel.kind !== 'ASSOCIATION') {
+      throw new DomainError('Solo una asociacion puede tener clase asociacion');
+    }
+    getClassOrThrow(model, rel.associationClassId);
+    if (rel.associationClassId === rel.sourceClassId || rel.associationClassId === rel.targetClassId) {
+      throw new DomainError('La clase asociacion no puede ser uno de los extremos de la relacion');
+    }
+  }
+}
+
+// Para reemplazos completos del grafo (importar XMI, guardado REST): mismas
+// reglas que al crear relaciones una por una, mas IDs unicos, para no
+// persistir referencias colgantes que la base rechazaria por FK.
+export function assertModelIsConsistent(model: UmlModel) {
+  const ids = new Set<string>();
+  const claim = (id: string) => {
+    if (ids.has(id)) throw new DomainError(`ID duplicado en el modelo: ${id}`);
+    ids.add(id);
+  };
+  for (const klass of model.classes) {
+    claim(klass.id);
+    if (!klass.name.trim()) throw new DomainError('Hay una clase sin nombre');
+    klass.attributes.forEach((a) => claim(a.id));
+  }
+  for (const rel of model.relationships) {
+    claim(rel.id);
+    assertRelationshipIsConsistent(model, rel);
+  }
+}
+
 // Funcion pura: dado el modelo actual y una operacion valida, produce el
 // modelo resultante. No persiste ni conoce revision; eso lo maneja el caso
 // de uso que la invoca (ApplyUmlOperation).
@@ -95,6 +174,7 @@ export function applyOperationToModel(model: UmlModel, op: UmlOperationInput): U
     case 'CREATE_CLASS': {
       const name = op.name.trim();
       if (!name) throw new DomainError('La clase debe tener un nombre');
+      if (model.classes.some((c) => c.id === op.classId)) throw new DomainError('Ya existe una clase con ese id');
       const klass: UmlClass = { id: op.classId, name, position: op.position, attributes: [] };
       return { ...model, classes: [...model.classes, klass] };
     }
@@ -119,16 +199,17 @@ export function applyOperationToModel(model: UmlModel, op: UmlOperationInput): U
       return {
         ...model,
         classes: model.classes.filter((c) => c.id !== op.classId),
-        relationships: model.relationships.filter(
-          (r) => r.sourceClassId !== op.classId && r.targetClassId !== op.classId,
-        ),
+        relationships: model.relationships
+          .filter((r) => r.sourceClassId !== op.classId && r.targetClassId !== op.classId)
+          .map((r) => (r.associationClassId === op.classId ? { ...r, associationClassId: undefined } : r)),
       };
     }
 
     case 'ADD_ATTRIBUTE': {
-      getClassOrThrow(model, op.classId);
+      const klass = getClassOrThrow(model, op.classId);
       const name = op.name.trim();
       if (!name) throw new DomainError('El atributo debe tener un nombre');
+      if (klass.attributes.some((a) => a.id === op.attributeId)) throw new DomainError('Ya existe un atributo con ese id');
       const attribute: UmlAttribute = {
         id: op.attributeId,
         name,
@@ -149,6 +230,9 @@ export function applyOperationToModel(model: UmlModel, op: UmlOperationInput): U
       const klass = getClassOrThrow(model, op.classId);
       if (!klass.attributes.some((a) => a.id === op.attributeId)) {
         throw new DomainError('El atributo no existe en la clase');
+      }
+      if (op.name !== undefined && !op.name.trim()) {
+        throw new DomainError('El atributo debe tener un nombre');
       }
       return {
         ...model,
@@ -185,26 +269,42 @@ export function applyOperationToModel(model: UmlModel, op: UmlOperationInput): U
     }
 
     case 'CREATE_RELATIONSHIP': {
-      getClassOrThrow(model, op.sourceClassId);
-      getClassOrThrow(model, op.targetClassId);
+      if (model.relationships.some((r) => r.id === op.relationshipId)) {
+        throw new DomainError('Ya existe una relacion con ese id');
+      }
       const relationship: UmlRelationship = {
         id: op.relationshipId,
         sourceClassId: op.sourceClassId,
         targetClassId: op.targetClassId,
-        type: op.type,
+        kind: op.kind,
         sourceMultiplicity: op.sourceMultiplicity,
         targetMultiplicity: op.targetMultiplicity,
+        name: cleanName(op.name),
+        associationClassId: op.associationClassId || undefined,
       };
+      assertRelationshipIsConsistent(model, relationship);
       return { ...model, relationships: [...model.relationships, relationship] };
     }
 
     case 'UPDATE_RELATIONSHIP': {
-      getRelationshipOrThrow(model, op.relationshipId);
+      const current = getRelationshipOrThrow(model, op.relationshipId);
+      const updated: UmlRelationship = {
+        ...current,
+        ...(op.kind !== undefined ? { kind: op.kind } : {}),
+        ...(op.sourceClassId !== undefined ? { sourceClassId: op.sourceClassId } : {}),
+        ...(op.targetClassId !== undefined ? { targetClassId: op.targetClassId } : {}),
+        ...(op.sourceMultiplicity !== undefined ? { sourceMultiplicity: op.sourceMultiplicity } : {}),
+        ...(op.targetMultiplicity !== undefined ? { targetMultiplicity: op.targetMultiplicity } : {}),
+        ...(op.name !== undefined ? { name: cleanName(op.name) } : {}),
+        ...(op.associationClassId !== undefined ? { associationClassId: op.associationClassId || undefined } : {}),
+      };
+      // Pasar a un tipo que no admite clase asociacion la quita en vez de
+      // rechazar el cambio (es lo que el usuario espera al cambiar el tipo).
+      if (updated.kind !== 'ASSOCIATION') updated.associationClassId = undefined;
+      assertRelationshipIsConsistent(model, updated);
       return {
         ...model,
-        relationships: model.relationships.map((r) =>
-          r.id === op.relationshipId ? { ...r, type: op.type } : r,
-        ),
+        relationships: model.relationships.map((r) => (r.id === op.relationshipId ? updated : r)),
       };
     }
 

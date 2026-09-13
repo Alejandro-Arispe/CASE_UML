@@ -1,14 +1,13 @@
 import { env } from '../../../config/env';
 import { createUmlModel } from '../../../domain/entities';
-import { validateUmlModel } from '../../../domain/validation/validateUmlModel';
 import { ProjectMemberRepository } from '../../../ports/out/ProjectMemberRepository';
 import { ProjectRepository } from '../../../ports/out/ProjectRepository';
 import { UmlModelRepository } from '../../../ports/out/UmlModelRepository';
 import { ForbiddenError, ModelInvalidError, NotFoundError } from '../../errors';
-import { buildGenerationModel } from '../../../generator/buildGenerationModel';
 import { ensureDatabaseExists } from '../../../generator/ensureDatabaseExists';
 import { shortProjectId } from '../../../generator/naming';
 import { WriteGeneratedProjectResult, writeGeneratedProject } from '../../../generator/writeGeneratedProject';
+import { validateForGeneration } from '../uml/ValidateUmlModel';
 
 const GENERATED_APP_PORT = 8081;
 
@@ -35,24 +34,25 @@ export class GenerateBackend {
 
     const model = (await this.umlModels.findByProjectId(input.projectId)) ?? createUmlModel(input.projectId);
 
-    // Seccion 17: nunca generar en silencio un backend invalido.
-    const validation = validateUmlModel(model);
-    if (!validation.valid) {
-      throw new ModelInvalidError(validation.issues);
+    // Seccion 17: nunca generar en silencio un backend invalido. Las
+    // advertencias (ej. PK ignorada en una subclase) no bloquean.
+    const { result, plan } = validateForGeneration(model, input.projectId);
+    if (!result.valid || !plan) {
+      throw new ModelInvalidError(result.issues.filter((i) => i.severity === 'ERROR'));
     }
 
-    const generationModel = buildGenerationModel(model, input.projectId);
-    await ensureDatabaseExists(generationModel.databaseName);
+    await ensureDatabaseExists(plan.model.databaseName);
 
     const dbUrl = new URL(env.databaseUrl);
     const dbPort = Number(dbUrl.port || 5432);
 
-    const result = writeGeneratedProject(generationModel, input.projectId, {
+    const written = writeGeneratedProject(plan.model, input.projectId, {
       artifactId: `gen-${shortProjectId(input.projectId)}`,
       port: GENERATED_APP_PORT,
+      dbHost: dbUrl.hostname,
       dbPort,
     });
 
-    return { ...result, dbHost: dbUrl.hostname, dbPort };
+    return { ...written, dbHost: dbUrl.hostname, dbPort };
   }
 }

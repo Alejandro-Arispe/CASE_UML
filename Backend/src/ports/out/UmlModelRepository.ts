@@ -9,5 +9,7 @@ export interface UmlModelRepository {
   // base ya no coincide -otro cliente escribio primero-, el guardado NO se
   // aplica y devuelve `false`; el llamador debe releer el modelo fresco y
   // reintentar la operacion en vez de asumir que se persistio.
-  save(model: UmlModel, expectedRevision: number | null): Promise<boolean>;
+  // `previous` (opcional) es el modelo leido en `expectedRevision`: permite
+  // al adaptador escribir solo las diferencias en vez del grafo completo.
+  save(model: UmlModel, expectedRevision: number | null, previous?: UmlModel | null): Promise<boolean>;
 }

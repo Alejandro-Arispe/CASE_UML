@@ -11,6 +11,7 @@ import { renderPom } from './templates/pom';
 import { renderRepository } from './templates/repository';
 import { renderSchemaSql } from './templates/schemaSql';
 import { renderService } from './templates/service';
+import { renderExceptionHandler, renderReadme, renderWebConfig } from './templates/support';
 
 export interface WriteGeneratedProjectResult {
   outputDir: string;
@@ -21,12 +22,10 @@ export interface WriteGeneratedProjectResult {
   files: string[];
 }
 
-// El backend generado ya no se deja pisando la carpeta del proyecto: se
+// El backend generado no se deja pisando la carpeta del proyecto: se
 // escribe en una carpeta temporal del sistema operativo, se comprime y se
 // entrega como descarga (ver generator.controller.ts); la carpeta temporal
-// se borra apenas se termina de enviar el .zip. Cada generacion usa un
-// nombre unico (timestamp) para poder convivir con generaciones anteriores
-// que todavia no terminaron de limpiarse.
+// se borra apenas se termina de enviar el .zip.
 function outputDirFor(projectId: string): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), `case-uml-gen-${projectId}-`));
 }
@@ -41,47 +40,27 @@ function writeFile(baseDir: string, relativePath: string, content: string, files
 export function writeGeneratedProject(
   model: GenerationModel,
   projectId: string,
-  options: { artifactId: string; port: number; dbPort: number },
+  options: { artifactId: string; port: number; dbHost: string; dbPort: number; outputDir?: string },
 ): WriteGeneratedProjectResult {
-  const outputDir = outputDirFor(projectId);
+  const outputDir = options.outputDir ?? outputDirFor(projectId);
   const files: string[] = [];
   const javaBase = path.join('src', 'main', 'java', ...model.packageName.split('.'));
 
   for (const klass of model.classes) {
-    writeFile(outputDir, path.join(javaBase, 'model', `${klass.className}.java`), renderEntity(model, klass), files);
-    writeFile(
-      outputDir,
-      path.join(javaBase, 'repository', `${klass.className}Repository.java`),
-      renderRepository(model, klass),
-      files,
-    );
-    writeFile(
-      outputDir,
-      path.join(javaBase, 'service', `${klass.className}Service.java`),
-      renderService(model, klass),
-      files,
-    );
-    writeFile(
-      outputDir,
-      path.join(javaBase, 'controller', `${klass.className}Controller.java`),
-      renderController(model, klass),
-      files,
-    );
-    writeFile(
-      outputDir,
-      path.join(javaBase, 'dto', `${klass.className}RequestDTO.java`),
-      renderRequestDto(model, klass),
-      files,
-    );
-    writeFile(
-      outputDir,
-      path.join(javaBase, 'dto', `${klass.className}ResponseDTO.java`),
-      renderResponseDto(model, klass),
-      files,
-    );
+    const write = (folder: string, suffix: string, content: string) =>
+      writeFile(outputDir, path.join(javaBase, folder, `${klass.className}${suffix}.java`), content, files);
+
+    write('model', '', renderEntity(model, klass));
+    write('repository', 'Repository', renderRepository(model, klass));
+    write('service', 'Service', renderService(model, klass));
+    write('controller', 'Controller', renderController(model, klass));
+    write('dto', 'RequestDTO', renderRequestDto(model, klass));
+    write('dto', 'ResponseDTO', renderResponseDto(model, klass));
   }
 
   writeFile(outputDir, path.join(javaBase, 'Application.java'), renderApplicationClass(model), files);
+  writeFile(outputDir, path.join(javaBase, 'config', 'WebConfig.java'), renderWebConfig(model), files);
+  writeFile(outputDir, path.join(javaBase, 'exception', 'GlobalExceptionHandler.java'), renderExceptionHandler(model), files);
   writeFile(outputDir, 'pom.xml', renderPom(options.artifactId), files);
   writeFile(
     outputDir,
@@ -90,6 +69,7 @@ export function writeGeneratedProject(
     files,
   );
   writeFile(outputDir, 'schema.sql', renderSchemaSql(model), files);
+  writeFile(outputDir, 'README.md', renderReadme(model, options), files);
 
   return {
     outputDir,

@@ -80,8 +80,9 @@ model UmlClass {
   model      UmlModel       @relation(fields: [modelId], references: [id], onDelete: Cascade)
   attributes UmlAttribute[]
 
-  relationshipsAsSource UmlRelationship[] @relation("RelationshipSource")
-  relationshipsAsTarget UmlRelationship[] @relation("RelationshipTarget")
+  relationshipsAsSource    UmlRelationship[] @relation("RelationshipSource")
+  relationshipsAsTarget    UmlRelationship[] @relation("RelationshipTarget")
+  relationshipsAsAssocClass UmlRelationship[] @relation("RelationshipAssociationClass")
 }
 
 // Tipos soportados (seccion 15). Ampliar solo cuando la generacion lo
@@ -106,24 +107,29 @@ model UmlAttribute {
   isPrimaryKey Boolean     @default(false)
   nullable     Boolean     @default(true)
   defaultValue String?
+  // Orden dentro de la clase (el guardado incremental actualiza filas en
+  // vez de reinsertarlas, asi que el orden no puede depender de la insercion).
+  sortOrder    Int         @default(0)
 
   class UmlClass @relation(fields: [classId], references: [id], onDelete: Cascade)
 }
 
-// Alcance de relaciones prioritarias (seccion 12): asociaciones con
-// multiplicidad. Aggregation/Composition/Dependency quedan fuera (seccion 13).
-enum RelationshipType {
-  ONE_TO_ONE
-  ONE_TO_MANY
-  MANY_TO_ONE
-  MANY_TO_MANY
+// Tipos de relacion de un diagrama de clases orientado a base de datos
+// (ver domain/entities/UmlRelationship.ts para la convencion source/target).
+enum RelationshipKind {
+  ASSOCIATION
+  AGGREGATION
+  COMPOSITION
+  GENERALIZATION
 }
 
-// Prisma no admite nombres de enum que empiecen con digito ("1"): ONE/MANY
-// se mapean a los valores de dominio '1'/'N' en el repositorio.
+// Prisma no admite nombres de enum con digitos/puntos ("0..*"): se mapean a
+// los valores de dominio '1' | '0..1' | '0..*' | '1..*' en el repositorio.
 enum Multiplicity {
   ONE
+  ZERO_OR_ONE
   MANY
+  ONE_OR_MANY
 }
 
 model UmlRelationship {
@@ -131,13 +137,16 @@ model UmlRelationship {
   modelId            String
   sourceClassId      String
   targetClassId      String
-  type               RelationshipType
+  kind               RelationshipKind @default(ASSOCIATION)
   sourceMultiplicity Multiplicity
   targetMultiplicity Multiplicity
+  name               String?
+  associationClassId String?
 
-  model       UmlModel @relation(fields: [modelId], references: [id], onDelete: Cascade)
-  sourceClass UmlClass @relation("RelationshipSource", fields: [sourceClassId], references: [id], onDelete: Cascade)
-  targetClass UmlClass @relation("RelationshipTarget", fields: [targetClassId], references: [id], onDelete: Cascade)
+  model            UmlModel  @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  sourceClass      UmlClass  @relation("RelationshipSource", fields: [sourceClassId], references: [id], onDelete: Cascade)
+  targetClass      UmlClass  @relation("RelationshipTarget", fields: [targetClassId], references: [id], onDelete: Cascade)
+  associationClass UmlClass? @relation("RelationshipAssociationClass", fields: [associationClassId], references: [id], onDelete: SetNull)
 }
 
 enum EditOperation {

@@ -1,5 +1,12 @@
-import { EditElementType, UmlModel } from '../../../domain/entities';
+import { EditElementType, RelationshipKind, UmlModel } from '../../../domain/entities';
 import { UmlOperationInput } from './umlOperations';
+
+const KIND_LABEL: Record<RelationshipKind, string> = {
+  ASSOCIATION: 'asociacion',
+  AGGREGATION: 'agregacion',
+  COMPOSITION: 'composicion',
+  GENERALIZATION: 'herencia',
+};
 
 function className(model: UmlModel, classId: string): string {
   return model.classes.find((c) => c.id === classId)?.name ?? '?';
@@ -13,7 +20,7 @@ function attributeName(model: UmlModel, classId: string, attributeId: string): s
 function relationshipLabel(model: UmlModel, relationshipId: string): string {
   const rel = model.relationships.find((r) => r.id === relationshipId);
   if (!rel) return '';
-  return `${className(model, rel.sourceClassId)} - ${className(model, rel.targetClassId)}`;
+  return `${KIND_LABEL[rel.kind]} ${className(model, rel.sourceClassId)} - ${className(model, rel.targetClassId)}`;
 }
 
 // Traduce una operacion aplicada a la descripcion legible del historial
@@ -75,7 +82,7 @@ export function describeUmlOperation(
       return {
         elementType: 'RELATIONSHIP',
         elementId: op.relationshipId,
-        description: `Creo relacion ${className(after, op.sourceClassId)} - ${className(after, op.targetClassId)}`,
+        description: `Creo ${KIND_LABEL[op.kind]} ${className(after, op.sourceClassId)} - ${className(after, op.targetClassId)}`,
       };
 
     case 'UPDATE_RELATIONSHIP':
@@ -83,14 +90,14 @@ export function describeUmlOperation(
       return {
         elementType: 'RELATIONSHIP',
         elementId: op.relationshipId,
-        description: `Actualizo la relacion ${relationshipLabel(after, op.relationshipId)}`,
+        description: `Actualizo la ${relationshipLabel(after, op.relationshipId)}`,
       };
 
     case 'DELETE_RELATIONSHIP':
       return {
         elementType: 'RELATIONSHIP',
         elementId: op.relationshipId,
-        description: `Elimino la relacion ${relationshipLabel(before, op.relationshipId)}`,
+        description: `Elimino la ${relationshipLabel(before, op.relationshipId)}`,
       };
   }
 }
