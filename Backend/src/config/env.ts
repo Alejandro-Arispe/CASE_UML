@@ -20,5 +20,6 @@ export const env = {
   jwtSecret: process.env.JWT_SECRET ?? 'dev-secret',
   jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? '7d',
   geminiApiKey: process.env.GEMINI_API_KEY ?? '',
+  localWhisperUrl: process.env.LOCAL_WHISPER_URL ?? 'http://127.0.0.1:8083',
   corsOrigin: process.env.CORS_ORIGIN ?? 'http://localhost:5173',
 };

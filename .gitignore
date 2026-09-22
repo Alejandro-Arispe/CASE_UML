@@ -4,3 +4,6 @@ build/
 .env
 *.log
 generated-backend/
+# Pesos locales para las aplicaciones generadas: nunca se versionan.
+local-ai/models/
+local-ai/runtime/

@@ -12,6 +12,7 @@ import { createValidationController } from './controllers/validation.controller'
 import { createGeneratorController } from './controllers/generator.controller';
 import { createProjectRoutes } from './routes/project.routes';
 import { errorHandler } from './middlewares/errorHandler';
+import { createLocalSpeechRoutes } from './routes/localSpeech.routes';
 
 // Composition del adaptador HTTP: registra middlewares globales y monta
 // las rutas. Las rutas de dominio (uml, ia, historial) se agregan aqui a
@@ -43,6 +44,7 @@ export function createApp() {
 
   const authController = createAuthController(container);
   app.use('/api/auth', createAuthRoutes(authController));
+  app.use('/api/local-speech', createLocalSpeechRoutes(container.tokenService));
 
   const projectController = createProjectController(container);
   const umlModelController = createUmlModelController(container);

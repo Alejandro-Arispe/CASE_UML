@@ -3,6 +3,7 @@ import type { ChangeEvent, FormEvent } from 'react';
 import * as collaboration from './collaboration';
 import { DIAGRAM_FILE_ACCEPT, prepareDiagramFile } from './imageUpload';
 import { useSpeechRecognition } from './useSpeechRecognition';
+import { useLocalSpeechRecognition } from './useLocalSpeechRecognition';
 import { ToolButton } from '../../components/ui/IconButton';
 import { IconAlert, IconCheckCircle, IconImage, IconMic, IconSend, IconSparkles, IconX } from '../../components/ui/icons';
 
@@ -30,6 +31,7 @@ export function AiPanel({ onClose }: { onClose: () => void }) {
     [],
   );
   const speech = useSpeechRecognition(appendDictation);
+  const localSpeech = useLocalSpeechRecognition(appendDictation);
 
   function applyResult(result: collaboration.AiCommandResult) {
     if (!result.ok) {
@@ -49,6 +51,7 @@ export function AiPanel({ onClose }: { onClose: () => void }) {
     e?.preventDefault();
     if (!prompt.trim() || loading) return;
     speech.stop();
+    localSpeech.stop();
 
     setLoading('text');
     setFeedback(null);
@@ -62,6 +65,7 @@ export function AiPanel({ onClose }: { onClose: () => void }) {
     e.target.value = '';
     if (!file || loading) return;
     speech.stop();
+    localSpeech.stop();
 
     setLoading('file');
     setFeedback(null);
@@ -130,6 +134,24 @@ export function AiPanel({ onClose }: { onClose: () => void }) {
               className={speech.listening ? '!bg-red-50 !text-red-700 !ring-red-200' : ''}
             />
             <ToolButton
+              label={
+                localSpeech.available
+                  ? localSpeech.recording
+                    ? 'Detener dictado local'
+                    : localSpeech.transcribing
+                      ? 'Transcribiendo localmente...'
+                      : 'Dictar localmente (Whisper)'
+                  : 'Whisper local no esta iniciado'
+              }
+              icon={<IconMic size={15} />}
+              active={localSpeech.recording || localSpeech.transcribing}
+              disabled={Boolean(loading) || !localSpeech.available || localSpeech.transcribing}
+              onClick={() => (localSpeech.recording ? localSpeech.stop() : localSpeech.start())}
+              tooltipSide="top"
+              tooltipAlign="start"
+              className={localSpeech.recording ? '!bg-violet-50 !text-violet-700 !ring-violet-200' : ''}
+            />
+            <ToolButton
               label="Subir foto, captura o PDF de un diagrama"
               icon={<IconImage size={15} />}
               disabled={Boolean(loading)}
@@ -175,6 +197,7 @@ export function AiPanel({ onClose }: { onClose: () => void }) {
         )}
 
         {speech.error && <p className="text-xs text-red-700">{speech.error}</p>}
+        {localSpeech.error && <p className="text-xs text-red-700">{localSpeech.error}</p>}
 
         {loading && (
           <div className="flex items-center gap-2 rounded-md bg-slate-50 px-2.5 py-2 text-xs text-slate-700" role="status">
