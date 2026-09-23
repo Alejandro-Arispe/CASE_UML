@@ -12,6 +12,8 @@ import { renderRepository } from './templates/repository';
 import { renderSchemaSql } from './templates/schemaSql';
 import { renderService } from './templates/service';
 import { renderExceptionHandler, renderReadme, renderWebConfig } from './templates/support';
+import { renderDockerCompose, renderDockerfile, renderDockerignore } from './templates/deployment';
+import { renderPostmanCollection } from './templates/postman';
 
 export interface WriteGeneratedProjectResult {
   outputDir: string;
@@ -70,6 +72,10 @@ export function writeGeneratedProject(
   );
   writeFile(outputDir, 'schema.sql', renderSchemaSql(model), files);
   writeFile(outputDir, 'README.md', renderReadme(model, options), files);
+  writeFile(outputDir, 'Dockerfile', renderDockerfile(options), files);
+  writeFile(outputDir, '.dockerignore', renderDockerignore(), files);
+  writeFile(outputDir, 'docker-compose.yml', renderDockerCompose(model, options), files);
+  writeFile(outputDir, `${options.artifactId}.postman_collection.json`, renderPostmanCollection(model, options), files);
 
   return {
     outputDir,

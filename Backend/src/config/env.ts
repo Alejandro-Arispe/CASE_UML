@@ -22,4 +22,9 @@ export const env = {
   geminiApiKey: process.env.GEMINI_API_KEY ?? '',
   localWhisperUrl: process.env.LOCAL_WHISPER_URL ?? 'http://127.0.0.1:8083',
   corsOrigin: process.env.CORS_ORIGIN ?? 'http://localhost:5173',
+  // En desarrollo, al generar un backend se crea su base "gen_..." en este
+  // mismo Postgres para poder correrlo al toque con Maven. En un servidor
+  // se desactiva: el zip ya trae su propia base (docker-compose) y no tiene
+  // sentido acumular bases huerfanas ni exponer el host interno de la base.
+  generatorCreateDatabases: process.env.GENERATOR_CREATE_DATABASES !== 'false',
 };

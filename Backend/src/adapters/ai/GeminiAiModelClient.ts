@@ -7,6 +7,35 @@ import { AiModelClient } from '../../ports/out/AiModelClient';
 
 const MODEL = 'gemini-3.6-flash';
 
+// Errores transitorios de Gemini (saturacion 503, limite 429, fallas 5xx o
+// de red): se reintenta con espera creciente. Solo se reintenta mientras
+// quede margen, porque el frontend da el pedido por perdido a los 180s y un
+// intento fallido puede tardar mas de un minuto en volver.
+const MAX_ATTEMPTS = 3;
+const RETRY_DELAYS_MS = [3_000, 6_000];
+const RETRY_TIME_BUDGET_MS = 100_000;
+const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
+
+function errorStatus(err: unknown): number | undefined {
+  const status = (err as { status?: unknown })?.status;
+  return typeof status === 'number' ? status : undefined;
+}
+
+function isRetryable(err: unknown): boolean {
+  const status = errorStatus(err);
+  if (status !== undefined) return RETRYABLE_STATUS.has(status);
+  // Sin status HTTP: corte de red / timeout del fetch.
+  return err instanceof TypeError || /fetch failed|ECONNRESET|ETIMEDOUT|socket hang up/i.test(String(err));
+}
+
+function unavailableMessage(err: unknown): string {
+  return errorStatus(err) === 429
+    ? 'Se alcanzo el limite de uso de la IA (Gemini). Espera un minuto e intenta de nuevo.'
+    : 'El servicio de IA (Gemini) esta saturado en este momento. Intenta de nuevo en unos segundos.';
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 const ACTIONS = [
   'CREATE_CLASS',
   'RENAME_CLASS',
@@ -136,20 +165,39 @@ export class GeminiAiModelClient implements AiModelClient {
       throw new DomainError('GEMINI_API_KEY no esta configurada en el backend');
     }
 
-    const response = await this.client.models.generateContent({
-      model: MODEL,
-      contents,
-      config: {
-        systemInstruction,
-        responseMimeType: 'application/json',
-        responseSchema: { type: Type.ARRAY, items: commandItemSchema },
-        // Disenar un modelo de datos completo si se beneficia de razonar
-        // (entidades de apoyo, cardinalidades); el limite de salida es amplio
-        // para que un sistema con muchas clases/atributos no se corte.
-        thinkingConfig: { thinkingLevel },
-        maxOutputTokens: 32768,
-      },
-    });
+    const request = () =>
+      this.client.models.generateContent({
+        model: MODEL,
+        contents,
+        config: {
+          systemInstruction,
+          responseMimeType: 'application/json',
+          responseSchema: { type: Type.ARRAY, items: commandItemSchema },
+          // Disenar un modelo de datos completo si se beneficia de razonar
+          // (entidades de apoyo, cardinalidades); el limite de salida es amplio
+          // para que un sistema con muchas clases/atributos no se corte.
+          thinkingConfig: { thinkingLevel },
+          maxOutputTokens: 32768,
+        },
+      });
+
+    const startedAt = Date.now();
+    let response: Awaited<ReturnType<typeof request>> | undefined;
+    for (let attempt = 1; !response; attempt++) {
+      try {
+        response = await request();
+      } catch (err) {
+        if (!isRetryable(err)) throw err;
+        const delay = RETRY_DELAYS_MS[attempt - 1];
+        const outOfBudget = Date.now() - startedAt + (delay ?? 0) > RETRY_TIME_BUDGET_MS;
+        if (attempt >= MAX_ATTEMPTS || delay === undefined || outOfBudget) {
+          console.warn(`[IA] Gemini no disponible tras ${attempt} intento(s):`, errorStatus(err) ?? String(err));
+          throw new DomainError(unavailableMessage(err));
+        }
+        console.warn(`[IA] Gemini respondio ${errorStatus(err) ?? 'error de red'}; reintento ${attempt + 1}/${MAX_ATTEMPTS} en ${delay / 1000}s`);
+        await sleep(delay);
+      }
+    }
 
     const text = response.text;
     if (!text) return [];

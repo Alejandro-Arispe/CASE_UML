@@ -22,6 +22,7 @@ CASE_UML/
 ├── Backend/           Node + TypeScript, arquitectura hexagonal (Ports & Adapters)
 ├── generator/         Generador propio de backend Spring Boot (Fase 10)
 ├── docs/              Documentacion tecnica del proyecto
+├── deploy/            Despliegue de produccion (AWS EC2 + Docker), ver deploy/README.md
 └── docker-compose.yml PostgreSQL para desarrollo local
 ```
 

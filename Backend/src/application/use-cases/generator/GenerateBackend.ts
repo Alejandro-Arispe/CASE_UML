@@ -41,18 +41,24 @@ export class GenerateBackend {
       throw new ModelInvalidError(result.issues.filter((i) => i.severity === 'ERROR'));
     }
 
-    await ensureDatabaseExists(plan.model.databaseName);
-
-    const dbUrl = new URL(env.databaseUrl);
-    const dbPort = Number(dbUrl.port || 5432);
+    // Con la creacion desactivada (servidor), el backend generado apunta por
+    // defecto a un Postgres local estandar; su docker-compose trae la base.
+    let dbHost = 'localhost';
+    let dbPort = 5432;
+    if (env.generatorCreateDatabases) {
+      await ensureDatabaseExists(plan.model.databaseName);
+      const dbUrl = new URL(env.databaseUrl);
+      dbHost = dbUrl.hostname;
+      dbPort = Number(dbUrl.port || 5432);
+    }
 
     const written = writeGeneratedProject(plan.model, input.projectId, {
       artifactId: `gen-${shortProjectId(input.projectId)}`,
       port: GENERATED_APP_PORT,
-      dbHost: dbUrl.hostname,
+      dbHost,
       dbPort,
     });
 
-    return { ...written, dbHost: dbUrl.hostname, dbPort };
+    return { ...written, dbHost, dbPort };
   }
 }

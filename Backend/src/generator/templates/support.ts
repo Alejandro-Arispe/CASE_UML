@@ -105,13 +105,20 @@ export function renderReadme(
 Backend Spring Boot + PostgreSQL generado automaticamente por **CASE_UML** a
 partir del diagrama de clases.
 
-## Requisitos
+## Opcion 1 — Docker (recomendado, en cualquier maquina)
 
-- Java 17+
-- Maven 3.9+
-- PostgreSQL (por defecto \`${options.dbHost}:${options.dbPort}\`, base \`${model.databaseName}\`)
+Solo requiere Docker. Levanta la API y su propia base PostgreSQL ya creada:
 
-## Ejecutar
+\`\`\`bash
+docker compose up --build
+\`\`\`
+
+Para detenerlo: \`docker compose down\` (agregar \`-v\` borra tambien los datos).
+
+## Opcion 2 — Maven
+
+Requiere Java 17+, Maven 3.9+ y un PostgreSQL con la base \`${model.databaseName}\`
+ya creada (por defecto \`${options.dbHost}:${options.dbPort}\`, usuario/clave \`case_uml\`):
 
 \`\`\`bash
 mvn spring-boot:run
@@ -122,6 +129,16 @@ La conexion se puede cambiar con variables de entorno: \`DB_HOST\`, \`DB_PORT\`,
 
 - API: http://localhost:${options.port}/api
 - Swagger UI: http://localhost:${options.port}/swagger-ui.html
+
+## Probar en Postman
+
+1. En Postman: **Import** → elegir \`${options.artifactId}.postman_collection.json\`.
+2. Con la API corriendo, abrir la coleccion y usar **Run collection**.
+
+La coleccion crea un registro de cada entidad en orden de dependencias,
+guarda los ids devueltos (variables \`{{...Id}}\`), lista, consulta,
+actualiza, prueba los errores 404/400 y al final elimina todo en orden inverso.
+Cada request tambien se puede ejecutar a mano.
 
 Hibernate crea/actualiza las tablas al arrancar (\`ddl-auto=update\`).
 \`schema.sql\` es solo una referencia del esquema resultante.
